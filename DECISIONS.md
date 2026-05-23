@@ -47,6 +47,6 @@
 - [x] SSH auth set up
 - [x] Next.js installed (TS + Tailwind + App Router)
 - [x] shadcn/ui initialized (button, card, input)
-- [ ] Supabase project + tables
-- [ ] Prisma setup
+- [X] Supabase project + tables
+- [X] Prisma setup
 - [ ] First Greenhouse scrape
