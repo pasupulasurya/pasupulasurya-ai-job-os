@@ -50,3 +50,11 @@
 - [X] Supabase project + tables
 - [X] Prisma setup
 - [ ] First Greenhouse scrape
+## Phase 2 architecture (locked)
+- Scrape: ATS-driven, scheduled via cron (not user-triggered)
+- Filter: 2 layers — owner rules (hard) + per-user keywords (soft)
+- ATS support v1: Greenhouse, Lever, Ashby (Workday in week 2)
+- Coverage week 1: 30 hand-picked US companies
+- US-only: strict (location must match US city/state/"Remote US")
+- Auth: Supabase email/password + magic link
+- Job storage: shared/deduped, per-user matches via UserJobMatch
