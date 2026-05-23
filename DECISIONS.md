@@ -58,3 +58,16 @@
 - US-only: strict (location must match US city/state/"Remote US")
 - Auth: Supabase email/password + magic link
 - Job storage: shared/deduped, per-user matches via UserJobMatch
+## Prisma 7 setup (locked)
+- Provider: `prisma-client` (new lean Rust-free client)
+- Output: `src/generated/prisma` (gitignored, regenerated via postinstall)
+- Adapter: `@prisma/adapter-pg` (mandatory in v7)
+- Env loading: explicit via `dotenv` (v7 doesn't auto-load)
+- Pool tuning: `connectionTimeoutMillis: 5000`, `idleTimeoutMillis: 10000`, `max: 10`
+- Import path: `@/generated/prisma/client` (app), `../src/generated/prisma/client` (scripts)
+
+## Phase 2A — DONE
+- [x] 9 tables in Supabase
+- [x] 30 US companies seeded
+- [x] 12 scraping rules seeded
+- [x] Prisma 7 client + adapter working
