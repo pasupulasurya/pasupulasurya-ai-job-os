@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { PostHogProvider } from "@/components/posthog-provider";
+import { CommandPalette } from "@/components/command-palette";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -38,7 +39,10 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     >
       <body className="bg-background text-text-primary font-sans antialiased">
         <ThemeProvider>
-          <PostHogProvider>{children}</PostHogProvider>
+          <PostHogProvider>
+            {children}
+            <CommandPalette />
+          </PostHogProvider>
         </ThemeProvider>
       </body>
     </html>
