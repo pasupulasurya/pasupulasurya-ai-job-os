@@ -44,3 +44,6 @@ next-env.d.ts
 
 # Prisma generated client (regenerated via postinstall)
 src/generated
+
+# Sentry Config File
+.env.sentry-build-plugin
