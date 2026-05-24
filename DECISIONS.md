@@ -1,5 +1,17 @@
 # AI Job OS — Project Decisions Log
 
+> **THE BAR:** Cinematic frontend (Apple-grade) + world-class backend (Stripe-grade).
+> Every line of code is checked against `VISION.md` and `docs/design/principles.md`.
+> No shortcuts. No "we'll clean it up later."
+
+## North star documents
+- `VISION.md` — what we're building and why
+- `docs/adr/` — Architecture Decision Records (one per major choice)
+- `docs/design/principles.md` — design language, codified
+
+---
+# AI Job OS — Project Decisions Log
+
 ## Stack
 - **Framework:** Next.js 16 (App Router, Turbopack)
 - **Language:** TypeScript
