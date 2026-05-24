@@ -31,7 +31,7 @@ export async function createSupabaseServerClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, options),
             );
           } catch {
             // Called from a Server Component — cookies cannot be set here.
@@ -39,6 +39,6 @@ export async function createSupabaseServerClient() {
           }
         },
       },
-    }
+    },
   );
 }

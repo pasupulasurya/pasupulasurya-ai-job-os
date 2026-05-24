@@ -29,16 +29,14 @@ export const metadata: Metadata = {
     "An AI-powered job application operating system. Deliberate, intelligent, human-in-the-loop.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html
       lang="en"
       suppressHydrationWarning
       className={`${inter.variable} ${interDisplay.variable} ${jetbrainsMono.variable}`}
     >
-      <body className="font-sans antialiased bg-background text-text-primary">
+      <body className="bg-background text-text-primary font-sans antialiased">
         <ThemeProvider>
           <PostHogProvider>{children}</PostHogProvider>
         </ThemeProvider>

@@ -144,7 +144,8 @@ const SCRAPING_RULES = [
   {
     name: "Require US location match",
     ruleType: "require_location_match",
-    pattern: "united states|usa|us-|remote (us|united states)|new york|san francisco|austin|seattle|boston|chicago|los angeles|denver|atlanta|miami|washington|new jersey|texas|california|colorado|massachusetts|illinois|florida|virginia|north carolina|georgia|oregon|arizona|nashville|portland|minneapolis|dallas|houston|philadelphia|phoenix|salt lake|raleigh|charlotte|remote",
+    pattern:
+      "united states|usa|us-|remote (us|united states)|new york|san francisco|austin|seattle|boston|chicago|los angeles|denver|atlanta|miami|washington|new jersey|texas|california|colorado|massachusetts|illinois|florida|virginia|north carolina|georgia|oregon|arizona|nashville|portland|minneapolis|dallas|houston|philadelphia|phoenix|salt lake|raleigh|charlotte|remote",
     appliesTo: "location",
   },
 

@@ -1,0 +1,21 @@
+# Build output
+.next
+node_modules
+dist
+build
+
+# Generated
+src/generated
+
+# Lockfiles
+package-lock.json
+
+# Misc
+*.lock
+*.log
+.env*
+.cache
+.vercel
+
+# Sentry
+.sentryclirc

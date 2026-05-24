@@ -23,11 +23,13 @@ technical/early-career, all are tired of LinkedIn Easy Apply spam.
 ## The bar
 
 ### Frontend — cinematic
+
 Every screen feels like an Apple product. Deep blacks, generous whitespace,
 restrained color, premium typography. Motion has purpose; nothing decorative.
 The UI tells the story of the user's job journey.
 
 ### Backend — world-class
+
 Stripe-grade reliability, observability, and type safety. Every action
 is logged. Every input is validated. Every operation is idempotent. The
 system stays correct under partial failure and graceful under load.
@@ -35,12 +37,14 @@ system stays correct under partial failure and graceful under load.
 ## Non-negotiable principles
 
 ### Product
+
 - Human review is mandatory before any submission
 - Never fake resume content — no fabricated companies, titles, or dates
 - The user's data belongs to the user, and we delete on request
 - Surface uncertainty honestly (match scores, confidence levels)
 
 ### Engineering
+
 - No `any` types in TypeScript
 - Every external input passes through a Zod schema
 - Every async operation has structured logging
@@ -50,6 +54,7 @@ system stays correct under partial failure and graceful under load.
 - No `console.log` in production code paths
 
 ### Design
+
 - 8px grid, no exceptions
 - One accent color, used sparingly
 - Spring-based motion, never linear easing

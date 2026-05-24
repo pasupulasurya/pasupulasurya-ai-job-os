@@ -5,14 +5,17 @@
 > No shortcuts. No "we'll clean it up later."
 
 ## North star documents
+
 - `VISION.md` — what we're building and why
 - `docs/adr/` — Architecture Decision Records (one per major choice)
 - `docs/design/principles.md` — design language, codified
 
 ---
+
 # AI Job OS — Project Decisions Log
 
 ## Stack
+
 - **Framework:** Next.js 16 (App Router, Turbopack)
 - **Language:** TypeScript
 - **Styling:** Tailwind CSS v4
@@ -22,11 +25,13 @@
 - **Directory:** `src/`
 
 ## Auth & DB (planned)
+
 - **Database:** Supabase PostgreSQL (free tier)
 - **ORM:** Prisma
 - **Auth:** Supabase Auth
 
 ## Hosting & Infra (planned)
+
 - **Hosting:** Vercel (free tier)
 - **Queue:** BullMQ + Upstash Redis
 - **Cron:** GitHub Actions
@@ -34,12 +39,14 @@
 - **Scraping:** Playwright (self-hosted)
 
 ## Beta plan
+
 - 10 friends, 3-week beta
 - 5 apps/day per user during beta
 - Human review mandatory, no auto-submit
 - Daily DB backup to local machine
 
 ## Phases (build order)
+
 1. ✅ Foundation (Next.js + Tailwind + shadcn)
 2. ⏳ Supabase + Prisma + tables
 3. ⏳ Greenhouse scraper (first ATS)
@@ -55,14 +62,17 @@
 13. ❌ 3D dashboard — SKIPPED (vanity)
 
 ## Today's progress
+
 - [x] GitHub repo created
 - [x] SSH auth set up
 - [x] Next.js installed (TS + Tailwind + App Router)
 - [x] shadcn/ui initialized (button, card, input)
-- [X] Supabase project + tables
-- [X] Prisma setup
+- [x] Supabase project + tables
+- [x] Prisma setup
 - [ ] First Greenhouse scrape
+
 ## Phase 2 architecture (locked)
+
 - Scrape: ATS-driven, scheduled via cron (not user-triggered)
 - Filter: 2 layers — owner rules (hard) + per-user keywords (soft)
 - ATS support v1: Greenhouse, Lever, Ashby (Workday in week 2)
@@ -70,7 +80,9 @@
 - US-only: strict (location must match US city/state/"Remote US")
 - Auth: Supabase email/password + magic link
 - Job storage: shared/deduped, per-user matches via UserJobMatch
+
 ## Prisma 7 setup (locked)
+
 - Provider: `prisma-client` (new lean Rust-free client)
 - Output: `src/generated/prisma` (gitignored, regenerated via postinstall)
 - Adapter: `@prisma/adapter-pg` (mandatory in v7)
@@ -79,6 +91,7 @@
 - Import path: `@/generated/prisma/client` (app), `../src/generated/prisma/client` (scripts)
 
 ## Phase 2A — DONE
+
 - [x] 9 tables in Supabase
 - [x] 30 US companies seeded
 - [x] 12 scraping rules seeded

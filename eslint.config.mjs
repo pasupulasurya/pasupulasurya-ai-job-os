@@ -1,18 +1,29 @@
 import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
-import nextTs from "eslint-config-next/typescript";
 
 const eslintConfig = defineConfig([
   ...nextVitals,
-  ...nextTs,
-  // Override default ignores of eslint-config-next.
+
+  // Ignore generated, build, and example files
   globalIgnores([
-    // Default ignores of eslint-config-next:
     ".next/**",
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "src/generated/**",
+    "node_modules/**",
+    "src/app/sentry-example-page/**",
+    "src/app/api/sentry-example-api/**",
   ]),
+
+  // Project-specific rule overrides
+  // CLI scripts (seed, migrations) can use console freely
+  {
+    files: ["prisma/**/*.ts", "scripts/**/*.ts"],
+    rules: {
+      "no-console": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
