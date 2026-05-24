@@ -23,6 +23,7 @@ model User {
   preferences   UserPreference?
   applications  Application[]
   jobMatches    UserJobMatch[]
+  blockedCompanies UserBlockedCompany[]
 }
 
 model UserPreference {
@@ -64,6 +65,7 @@ model Company {
 
   lastScrapedAt  DateTime?
   lastJobCount   Int       @default(0)
+  blockedByUsers UserBlockedCompany[]
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -113,6 +115,8 @@ model Job {
   postedAt          DateTime?
 
   scrapedAt       DateTime @default(now())
+  expiresAt   DateTime?
+  deletedAt   DateTime?
   updatedAt       DateTime @updatedAt
 
   applications    Application[]
@@ -136,13 +140,19 @@ model UserJobMatch {
   jobId         String
   job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  matchScore    Float    @default(0) // 0.0 - 1.0
+  matchScore    Float    @default(0)
+  status        String   @default("fresh") // "fresh" | "viewed" | "applied" | "dismissed" | "rejected"
   matchedAt     DateTime @default(now())
+  viewedAt      DateTime?
+  dismissedAt   DateTime?
   dismissed     Boolean  @default(false)
+  autoDismissed Boolean  @default(false)
 
   @@unique([userId, jobId])
   @@index([userId, matchScore])
   @@index([dismissed])
+  @@index([status])
+  @@index([matchedAt])
 }
 
 // ============================================================
@@ -162,9 +172,11 @@ model Application {
   notes        String?        @db.Text
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
+  archivedAt   DateTime?
 
   @@index([userId, status])
   @@index([status])
+  @@index([archivedAt])
 }
 
 // ============================================================
@@ -180,6 +192,24 @@ model ResumeVersion {
   docxUrl      String?
   createdAt    DateTime      @default(now())
   applications Application[]
+}
+
+// ============================================================
+// USER BLOCKED COMPANIES
+// ============================================================
+
+model UserBlockedCompany {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  reason    String?  // "rejected" | "not_interested" | "ghosted" | "low_quality"
+  blockedAt DateTime @default(now())
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
 }
 
 // ============================================================
