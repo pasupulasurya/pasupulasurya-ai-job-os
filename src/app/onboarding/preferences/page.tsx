@@ -1,0 +1,129 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { motion } from "framer-motion";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { AuthBanner } from "@/components/auth/auth-banner";
+import { SubmitButton } from "@/components/auth/submit-button";
+import { ChipInput } from "@/components/onboarding/chip-input";
+import { ExperienceRange } from "@/components/onboarding/experience-range";
+import { JobTypeSelect } from "@/components/onboarding/job-type-select";
+import { PreferenceToggle } from "@/components/onboarding/preference-toggle";
+import { preferencesSchema } from "@/shared/schemas/preferences";
+import { savePreferencesAction } from "@/server/actions/preferences";
+import { spring } from "@/styles/tokens";
+
+type JobType = "full-time" | "internship" | "contract" | "part-time";
+
+export default function OnboardingPreferencesPage() {
+  const [keywords, setKeywords] = useState<string[]>([]);
+  const [excludeKeywords, setExcludeKeywords] = useState<string[]>([]);
+  const [locations, setLocations] = useState<string[]>([]);
+  const [jobTypes, setJobTypes] = useState<JobType[]>([]);
+  const [experienceMin, setExperienceMin] = useState<number | null>(null);
+  const [experienceMax, setExperienceMax] = useState<number | null>(null);
+  const [visaSponsorship, setVisaSponsorship] = useState(true);
+  const [stemOptOnly, setStemOptOnly] = useState(false);
+
+  const [error, setError] = useState<string | null>(null);
+  const [, startTransition] = useTransition();
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+
+    const input = {
+      keywords,
+      excludeKeywords,
+      locations,
+      jobTypes,
+      experienceMin,
+      experienceMax,
+      visaSponsorship,
+      stemOptOnly,
+    };
+
+    const parsed = preferencesSchema.safeParse(input);
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message ?? "Check your preferences");
+      return;
+    }
+
+    startTransition(async () => {
+      const res = await savePreferencesAction(input);
+      if (res && "error" in res) {
+        setError(res.error);
+      }
+      // Success → server action redirects, nothing to do here
+    });
+  }
+
+  return (
+    <AuthShell
+      title="Tell us what you're hunting for"
+      subtitle="We'll match jobs against this — you can edit any time."
+    >
+      <form onSubmit={handleSubmit} className="space-y-6">
+        {error && <AuthBanner variant="error" title="Couldn't save" message={error} />}
+
+        <ChipInput
+          label="Keywords"
+          placeholder="e.g. AI, ML, frontend, React"
+          hint="Add roles, skills, or tech you want jobs to match."
+          values={keywords}
+          onChange={setKeywords}
+        />
+
+        <ChipInput
+          label="Exclude keywords (optional)"
+          placeholder="e.g. senior, staff, principal"
+          hint="Skip jobs that mention these terms."
+          values={excludeKeywords}
+          onChange={setExcludeKeywords}
+        />
+
+        <ExperienceRange
+          min={experienceMin}
+          max={experienceMax}
+          onChange={(min, max) => {
+            setExperienceMin(min);
+            setExperienceMax(max);
+          }}
+        />
+
+        <JobTypeSelect values={jobTypes} onChange={setJobTypes} />
+
+        <ChipInput
+          label="Preferred locations (optional)"
+          placeholder="e.g. Remote, NYC, SF"
+          hint="Leave empty to include any US location."
+          values={locations}
+          onChange={setLocations}
+        />
+
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={spring.smooth}
+          className="space-y-3"
+        >
+          <PreferenceToggle
+            label="I need visa sponsorship"
+            description="We'll filter out jobs that explicitly say they don't sponsor."
+            value={visaSponsorship}
+            onChange={setVisaSponsorship}
+          />
+
+          <PreferenceToggle
+            label="STEM OPT only"
+            description="Only show jobs with STEM OPT–compatible classifications."
+            value={stemOptOnly}
+            onChange={setStemOptOnly}
+          />
+        </motion.div>
+
+        <SubmitButton>Save and continue</SubmitButton>
+      </form>
+    </AuthShell>
+  );
+}
