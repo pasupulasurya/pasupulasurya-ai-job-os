@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { PostHogProvider } from "@/components/posthog-provider";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -38,7 +39,9 @@ export default function RootLayout({
       className={`${inter.variable} ${interDisplay.variable} ${jetbrainsMono.variable}`}
     >
       <body className="font-sans antialiased bg-background text-text-primary">
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider>
+          <PostHogProvider>{children}</PostHogProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
