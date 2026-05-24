@@ -1,11 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Command } from "cmdk";
 import { AnimatePresence, motion } from "framer-motion";
-import { Search, Home, Sparkles, Settings, Sun, Moon, LogOut, type LucideIcon } from "lucide-react";
+import {
+  Search,
+  Home,
+  Sparkles,
+  Settings,
+  Sun,
+  Moon,
+  LogIn,
+  LogOut,
+  UserPlus,
+  SlidersHorizontal,
+  type LucideIcon,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import { spring, duration } from "@/styles/tokens";
+import { useAuthUser } from "@/lib/use-auth-user";
+import { signOutAction } from "@/server/actions/auth";
 
 type CommandItem = {
   id: string;
@@ -19,14 +34,19 @@ type CommandItem = {
 /**
  * Command Palette — the cinematic ⌘K experience.
  *
- * Press ⌘K (or Ctrl+K) anywhere in the app to open.
- * Keyboard-first, motion-driven, theme-aware.
+ * Context-aware:
+ *   - Logged out → shows Sign In / Sign Up
+ *   - Logged in  → shows Preferences / Sign Out (with user's email)
+ *
+ * Always shows: Home, Theme toggle.
  */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const { theme, setTheme } = useTheme();
+  const { user } = useAuthUser();
+  const router = useRouter();
+  const [, startTransition] = useTransition();
 
-  // Global ⌘K / Ctrl+K listener
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
@@ -40,6 +60,7 @@ export function CommandPalette() {
 
   const close = () => setOpen(false);
 
+  // Build the item list based on auth state
   const items: CommandItem[] = [
     {
       id: "home",
@@ -48,21 +69,34 @@ export function CommandPalette() {
       group: "Navigate",
       shortcut: ["g", "h"],
       onSelect: () => {
-        window.location.assign("/");
+        router.push("/");
         close();
       },
     },
-    {
-      id: "settings",
-      label: "Open Settings",
-      icon: Settings,
-      group: "Navigate",
-      shortcut: ["g", "s"],
-      onSelect: () => {
-        // Placeholder — settings page comes in Phase 2B
-        close();
-      },
-    },
+    ...(user
+      ? [
+          {
+            id: "preferences",
+            label: "Edit preferences",
+            icon: SlidersHorizontal,
+            group: "Navigate" as const,
+            shortcut: ["g", "p"],
+            onSelect: () => {
+              router.push("/onboarding/preferences");
+              close();
+            },
+          },
+          {
+            id: "settings",
+            label: "Settings",
+            icon: Settings,
+            group: "Navigate" as const,
+            onSelect: () => {
+              close();
+            },
+          },
+        ]
+      : []),
     {
       id: "theme-dark",
       label: "Switch to Dark mode",
@@ -83,16 +117,43 @@ export function CommandPalette() {
         close();
       },
     },
-    {
-      id: "sign-out",
-      label: "Sign Out",
-      icon: LogOut,
-      group: "Account",
-      onSelect: () => {
-        // Placeholder — auth comes in Phase 2B
-        close();
-      },
-    },
+    ...(user
+      ? [
+          {
+            id: "sign-out",
+            label: `Sign out (${user.email})`,
+            icon: LogOut,
+            group: "Account" as const,
+            onSelect: () => {
+              startTransition(async () => {
+                await signOutAction();
+              });
+              close();
+            },
+          },
+        ]
+      : [
+          {
+            id: "sign-in",
+            label: "Sign in",
+            icon: LogIn,
+            group: "Account" as const,
+            onSelect: () => {
+              router.push("/login");
+              close();
+            },
+          },
+          {
+            id: "sign-up",
+            label: "Create account",
+            icon: UserPlus,
+            group: "Account" as const,
+            onSelect: () => {
+              router.push("/signup");
+              close();
+            },
+          },
+        ]),
   ];
 
   const groups = Array.from(new Set(items.map((i) => i.group)));
@@ -249,7 +310,7 @@ export function CommandPalette() {
                     select
                   </span>
                 </div>
-                <span>AI Job OS</span>
+                <span>{user ? user.email : "AI Job OS"}</span>
               </div>
             </Command>
           </motion.div>
