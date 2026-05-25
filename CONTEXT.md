@@ -1,7 +1,7 @@
 # AI Job OS — Session Context
 
 > **Paste this file at the start of every new session with Claude.**
-> Last updated: 2026-05-24
+> Last updated: 2026-05-25
 
 ---
 
@@ -27,47 +27,79 @@ No emojis in production UI. We are precise, never cute.
 
 ---
 
-## 2. WHAT WE'VE BUILT (cumulative)
+## 2. WHAT WE'VE BUILT (cumulative — all shipped to main)
 
-### Foundation (F1–F7) — shipped to main
+- Foundation (F1-F7): VISION, ADRs, design tokens, observability, quality gates, command palette
+- Phase 2A: 10-table schema, 30 US companies seeded, 12 owner rules
+- Phase 2B: Supabase Auth + Resend SMTP + DB triggers + auth pages + middleware + onboarding
+- Phase 2C.0: Schema additions for lifecycle (expiresAt, deletedAt, UserJobMatch.status, archivedAt, UserBlockedCompany)
+- Phase 2C.1: Greenhouse scraper — **913 real US jobs from 11 companies**
+- Phase 2C.3: Ashby scraper — **138 additional jobs from 6 companies (OpenAI, Notion, Snowflake, Perplexity, Plaid, Ramp)**
 
-- VISION.md, ADRs (0001 stack, 0002 auth, 0003 data lifecycle)
-- Design system: tokens.ts, principles.md
-- Layered architecture: `src/server/` + `src/lib/` + `src/shared/`
-- Observability: Pino + Sentry + PostHog (verified live)
-- Quality gates: Prettier + Husky + lint-staged + commitlint
-- Command palette (cinematic reference component)
-
-### Phase 2A — shipped to main
-
-- 10-table schema on Supabase
-- 30 US companies seeded, 12 owner rules seeded
-- Prisma 7 + `@prisma/adapter-pg`
-
-### Phase 2B — shipped to main
-
-- Supabase Auth + Resend SMTP
-- DB triggers: `on_auth_user_created`, `on_auth_user_deleted`
-  (file: `prisma/sql/0001_auth_signup_trigger.sql`)
-- Auth pages: `/login`, `/signup`, `/auth/callback`, `/auth/auth-code-error`
-- Onboarding: `/onboarding/preferences` (chip inputs, presets, toggles)
-- Middleware route protection
-- Command palette wired to real auth + PostHog identify
-
-### Phase 2C.0 — on `feat/scraper-and-cleanup`
-
-- Schema additions: `expiresAt`, `deletedAt`, `UserJobMatch.status/viewedAt/dismissedAt/autoDismissed`, `Application.archivedAt`, new `UserBlockedCompany` model
-
-### Phase 2C.1 — on `feat/scraper-and-cleanup`
-
-- Greenhouse scraper end-to-end (5 files in `src/server/services/scrapers/`)
-- CLI runner: `npm run scrape:gh`
-- **913 real US jobs in DB from 11 companies**
-- Idempotency verified (running twice → 0 new inserts)
+**Total in DB right now: 1,051 real US jobs across 17 companies**
 
 ---
 
-## 3. EXACT SCHEMA FIELDS (cheat sheet — Prisma 7)
+## 3. EXACT SCHEMA FIELDS (Prisma 7 cheat sheet)
+
+**Source of truth:** `prisma/schema.prisma`. Re-paste this if drift is suspected.
+
+### User
+
+`id, authId, email (unique), name, role, createdAt, updatedAt`
+
+- relations: preferences, applications, jobMatches, blockedCompanies
+
+### UserPreference
+
+`id, userId (unique), keywords[], excludeKeywords[], locations[], jobTypes[], experienceMin, experienceMax, visaSponsorship, stemOptOnly, dailyApplyLimit, createdAt, updatedAt`
+
+### Company ← used by scrapers
+
+`id, slug (unique), name, ats, active, knownToSponsor, notes, lastScrapedAt, lastJobCount, createdAt, updatedAt`
+
+- `ats`: "greenhouse" | "lever" | "ashby" | "workday"
+- `active`: boolean
+- **WATCH:** `ats` not `source`; `active` not `isActive`
+
+### ScrapingRule ← used by scrapers
+
+`id, name, ruleType, pattern, enabled, appliesTo, createdAt, updatedAt`
+
+- `ruleType`: "exclude_keyword" | "require_location_match" | "max_age_days"
+- `appliesTo`: "description" | "title" | "location" | "any"
+- `enabled`: boolean
+- **WATCH:** `ruleType` not `action`; `appliesTo` not `field`; `enabled` not `isActive`
+
+### Job ← inserted by scrapers
+
+`id, source, sourceUrl (UNIQUE), externalId, title, company, companySlug, location, remote, description (text), rawJson (json), hash, seniority, experienceYears, skills[], sponsorsVisa, stemOptFriendly, postedAt, scrapedAt, expiresAt, deletedAt, updatedAt`
+
+- **WATCH:** `company` is a STRING (not FK), `sourceUrl` not `url`, `externalId` not `sourceJobId`, `source` is the ATS name string
+
+### UserJobMatch
+
+`id, userId, jobId, matchScore, status, matchedAt, viewedAt, dismissedAt, dismissed, autoDismissed`
+
+- `status`: "fresh" | "viewed" | "applied" | "dismissed" | "rejected"
+
+### Application
+
+`id, userId, jobId, status, resumeId, appliedAt, notes, createdAt, updatedAt, archivedAt`
+
+### ResumeVersion
+
+`id, jobId (optional), contentJson, pdfUrl, docxUrl, createdAt`
+
+### UserBlockedCompany
+
+`id, userId, companyId, reason, blockedAt`
+
+- `reason`: "rejected" | "not_interested" | "ghosted" | "low_quality"
+
+### Log
+
+`id, action, payload, level, createdAt`
 
 ---
 
@@ -86,15 +118,32 @@ No emojis in production UI. We are precise, never cute.
 | US-only filter            | Multi-office OK (any segment US → accept)              |
 | Rule patterns             | Regex (case-insensitive)                               |
 | Server-only guard         | Only on supabase-server.ts (not prisma/logger/posthog) |
+| Git workflow              | Direct commits to main acceptable for solo work        |
 
 ---
 
-## 5. WHAT REMAINS
+## 5. EXISTING SCRAPER FILES (`src/server/services/scrapers/`)
 
-### Phase 2C (continued)
+| File                   | Purpose                                  | Reusable across scrapers? |
+| ---------------------- | ---------------------------------------- | ------------------------- |
+| `greenhouse.schema.ts` | Zod schema for Greenhouse API            | No (provider-specific)    |
+| `greenhouse.ts`        | Greenhouse orchestrator                  | No (provider-specific)    |
+| `ashby.schema.ts`      | Zod schema for Ashby API                 | No (provider-specific)    |
+| `ashby.ts`             | Ashby orchestrator                       | No (provider-specific)    |
+| `location.ts`          | `isUSLocation()`, `hasUSLocation()`      | ✅ YES — pure function    |
+| `hash.ts`              | `jobHash(slug, title, location)` SHA-256 | ✅ YES — pure function    |
+| `rules.ts`             | `applyRules()` owner-rule engine         | ✅ YES — pure function    |
 
-- Phase 2C.2 — Lever scraper (estimated 30 min, copy Greenhouse pattern)
-- Phase 2C.3 — Ashby scraper (CRITICAL: OpenAI, Notion, Linear, Plaid, Snowflake, Ramp, Supabase, Perplexity, Rippling all queued — ~9 more companies)
+CLI: `scripts/scrape.ts` with provider dispatcher.
+npm scripts: `scrape:gh`, `scrape:ashby`.
+
+---
+
+## 6. WHAT REMAINS
+
+### Phase 2C (still in flight)
+
+- Phase 2C.2 — Lever scraper (deferred — only 1 company in DB: Cohere)
 - Phase 2C.4 — Daily cleanup script (`scripts/cleanup.ts` — 4 SQL ops)
 - Phase 2C.5 — GitHub Actions cron for scrape + cleanup
 - Phase 2C.6 — Airbnb Zod bug (1,224 jobs hidden, deferred)
@@ -108,25 +157,28 @@ No emojis in production UI. We are precise, never cute.
 
 ### Phase 2E — Matcher + Dashboard
 
-- Populate `UserJobMatch` per user
-- Build `/dashboard` to Apple-grade bar
+- Populate UserJobMatch per user
+- Build /dashboard at Apple-grade bar
 - Match by keywords + (later) pgvector semantic match
 
 ### Phase 2F — Deploy to Vercel
 
-### Phase 2G+ — Resume tailoring, PDF gen, Playwright auto-fill (review-only), Gmail intelligence
+### Phase 2G+ — Resume tailoring, PDF gen, Playwright auto-fill, Gmail intelligence
 
 ---
 
-## 6. KNOWN ISSUES (small)
+## 7. KNOWN ISSUES (small, deferred)
 
-1. ~3-5 Greenhouse jobs per scrape fail with `\u0000` byte (~0.3% — accepted)
-2. Airbnb returns 0 fetched despite 1,224 jobs in API (deferred)
-3. Coinbase Greenhouse API returns 404 (likely IP-based, deferred)
+1. ~3 Greenhouse jobs per scrape fail with `\u0000` byte (~0.3% — accepted)
+2. Airbnb (greenhouse) returns 0 fetched despite 1,224 jobs in API
+3. Coinbase (greenhouse) returns 404 from some IPs
+4. Rippling moved to its own ATS (`ats.rippling.com`) — marked inactive
+5. Hugging Face uses Workable — deferred until Workable scraper exists
+6. Supabase (ashby) and Linear (ashby) are non-US / European-only
 
 ---
 
-## 7. CRITICAL FILES (in current repo)
+## 8. CRITICAL FILES (current repo state)
 
 | Concern            | Path                                                                                 |
 | ------------------ | ------------------------------------------------------------------------------------ |
@@ -137,18 +189,22 @@ No emojis in production UI. We are precise, never cute.
 | Auth               | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts` |
 | Preferences        | `src/server/actions/preferences.ts`, `src/app/onboarding/preferences/*`              |
 | Command palette    | `src/components/command-palette.tsx`                                                 |
-| Greenhouse scraper | `src/server/services/scrapers/*.ts`                                                  |
-| CLI                | `scripts/scrape.ts`                                                                  |
+| Greenhouse scraper | `src/server/services/scrapers/greenhouse*.ts`                                        |
+| Ashby scraper      | `src/server/services/scrapers/ashby*.ts`                                             |
+| CLI runner         | `scripts/scrape.ts`                                                                  |
 
 ---
 
-## 8. HOW TO RESUME
+## 9. HOW TO RESUME
 
 Start a new session with:
+
+> "Read CONTEXT.md first. Confirm schema field names before any code. Ready for Phase 2C.[N]."
+
 Then paste this file. I will:
 
 1. Re-read the bar
-2. Confirm the schema field names
+2. Confirm the schema field names (Section 3 above)
 3. Plan in plain English BEFORE writing code
 4. Write code in ≤30-line chunks you can audit
 5. Never re-derive context from memory
