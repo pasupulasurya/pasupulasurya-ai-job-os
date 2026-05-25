@@ -3,23 +3,63 @@
  * CLI scraper runner.
  *
  * Usage:
- *   npx tsx scripts/scrape.ts greenhouse                    # all active companies
- *   npx tsx scripts/scrape.ts greenhouse --slug=anthropic   # just one
- *   npx tsx scripts/scrape.ts greenhouse --slug=anthropic --slug=stripe
+ *   npx tsx scripts/scrape.ts greenhouse                       # all active GH
+ *   npx tsx scripts/scrape.ts greenhouse --slug=anthropic      # one GH company
+ *   npx tsx scripts/scrape.ts ashby                            # all active Ashby
+ *   npx tsx scripts/scrape.ts ashby --slug=linear              # one Ashby company
+ *   npx tsx scripts/scrape.ts ashby --slug=openai --slug=ramp  # multiple
  *
  * Exits 0 on success, 1 on error.
  */
 
 import { scrapeGreenhouse } from "../src/server/services/scrapers/greenhouse";
+import { scrapeAshby } from "../src/server/services/scrapers/ashby";
+
+type Provider = "greenhouse" | "ashby";
+
+const SUPPORTED_PROVIDERS: Provider[] = ["greenhouse", "ashby"];
+
+/**
+ * Common shape that all scrapers return. Different scrapers may have
+ * extra fields (e.g. Ashby has skippedUnlisted), but the CLI only
+ * displays the lowest common denominator.
+ */
+interface CommonOutcome {
+  company: string;
+  fetched: number;
+  insertedNew: number;
+  skippedDedup: number;
+  skippedRules: number;
+  skippedLocation: number;
+  errors: number;
+}
+
+async function runScraper(provider: Provider, slugs: string[]): Promise<CommonOutcome[]> {
+  const filter = slugs.length > 0 ? slugs : undefined;
+
+  if (provider === "greenhouse") {
+    return scrapeGreenhouse(filter);
+  }
+  if (provider === "ashby") {
+    return scrapeAshby(filter);
+  }
+  // Exhaustiveness check — TypeScript will error here if we add a
+  // provider to the union but forget to handle it above.
+  const _exhaustive: never = provider;
+  throw new Error(`Unhandled provider: ${_exhaustive as string}`);
+}
 
 async function main() {
   const args = process.argv.slice(2);
-  const provider = args[0];
+  const providerArg = args[0];
 
-  if (provider !== "greenhouse") {
-    console.error(`Unknown provider: "${provider}". Supported: greenhouse`);
+  if (!SUPPORTED_PROVIDERS.includes(providerArg as Provider)) {
+    console.error(
+      `Unknown provider: "${providerArg}". Supported: ${SUPPORTED_PROVIDERS.join(", ")}`,
+    );
     process.exit(1);
   }
+  const provider = providerArg as Provider;
 
   // Collect --slug=X flags (can be repeated)
   const slugs: string[] = [];
@@ -33,7 +73,7 @@ async function main() {
     `→ Scraping ${provider}${slugs.length ? ` (slugs: ${slugs.join(", ")})` : " (all)"}\n`,
   );
 
-  const results = await scrapeGreenhouse(slugs.length > 0 ? slugs : undefined);
+  const results = await runScraper(provider, slugs);
 
   // Print summary table
   console.log("\n┌─────────────────────────────────────────────────────────────┐");
