@@ -1,0 +1,50 @@
+name: Daily scrape + cleanup
+
+# Runs every day at 11:00 UTC (= 04:00 PT / 07:00 ET)
+# Can also be triggered manually from the Actions tab
+on:
+  schedule:
+    - cron: "0 11 * * *"
+  workflow_dispatch: {} # enables manual "Run workflow" button
+
+jobs:
+  daily:
+    name: Scrape + cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      NODE_ENV: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Scrape Greenhouse — continue even if it fails so Ashby + cleanup still run
+      - name: Scrape Greenhouse
+        run: npx tsx scripts/scrape.ts greenhouse
+        continue-on-error: true
+
+      # Scrape Ashby — same
+      - name: Scrape Ashby
+        run: npx tsx scripts/scrape.ts ashby
+        continue-on-error: true
+
+      # Cleanup — runs even if scrapes failed (it's independent of fresh inserts)
+      - name: Cleanup
+        run: npx tsx scripts/cleanup.ts
