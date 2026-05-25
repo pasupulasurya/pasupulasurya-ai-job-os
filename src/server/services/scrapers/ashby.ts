@@ -3,7 +3,11 @@ import { logger } from "@/server/lib/logger";
 import { hasUSLocation } from "@/server/services/scrapers/location";
 import { jobHash } from "@/server/services/scrapers/hash";
 import { applyRules, type OwnerRule, type RuleableJob } from "@/server/services/scrapers/rules";
-import { parseAshbyResponse, type AshbyJob } from "@/server/services/scrapers/ashby.schema";
+import {
+  parseAshbyJobsArray,
+  parseAshbyJob,
+  type AshbyJob,
+} from "@/server/services/scrapers/ashby.schema";
 
 const ASHBY_API = "https://api.ashbyhq.com/posting-api/job-board";
 const DEDUP_WINDOW_DAYS = 14;
@@ -18,15 +22,10 @@ export interface ScrapeOutcome {
   skippedRules: number;
   skippedLocation: number;
   skippedUnlisted: number;
+  skippedMalformed: number;
   errors: number;
 }
 
-/**
- * Recursively strip null bytes from any string in a JSON-like object.
- * Postgres TEXT/JSONB reject 0x00 bytes; this guarantees we never send them.
- *
- * Pure function: returns a new value, does not mutate the input.
- */
 function stripNullBytes(value: unknown): unknown {
   if (typeof value === "string") {
     return value.replace(/\u0000/g, "");
@@ -44,10 +43,6 @@ function stripNullBytes(value: unknown): unknown {
   return value;
 }
 
-/**
- * Strip HTML tags and decode common entities to plain text.
- * Used as a fallback when Ashby doesn't provide `descriptionPlain`.
- */
 function stripHtml(html: string | undefined): string {
   if (!html) return "";
   return html
@@ -67,8 +62,6 @@ function stripHtml(html: string | undefined): string {
  * Combine Ashby's primary location with its secondaryLocations[] into a
  * single pipe-delimited string. Mirrors Greenhouse's format so location.ts
  * can stay agnostic of the source.
- *
- * Example output: "San Francisco, CA | New York, NY | Remote (US)"
  */
 function combineLocations(j: AshbyJob): string {
   const parts: string[] = [j.location];
@@ -81,10 +74,10 @@ function combineLocations(j: AshbyJob): string {
 }
 
 /**
- * Fetch + Zod-validate one Ashby board's jobs.
- * Throws on HTTP error or malformed response.
+ * Fetch the Ashby board response, validate only the top-level shape.
+ * Returns the raw jobs array; per-job parsing happens in the loop.
  */
-async function fetchAshbyJobs(slug: string): Promise<AshbyJob[]> {
+async function fetchAshbyJobs(slug: string): Promise<unknown[]> {
   const url = `${ASHBY_API}/${slug}`;
   const res = await fetch(url, {
     headers: { "User-Agent": USER_AGENT },
@@ -95,19 +88,13 @@ async function fetchAshbyJobs(slug: string): Promise<AshbyJob[]> {
   }
 
   const raw = (await res.json()) as unknown;
-  const parsed = parseAshbyResponse(raw);
-  return parsed.jobs;
+  return parseAshbyJobsArray(raw);
 }
 
 /**
  * Scrape one Ashby-backed company by Company.id.
  *
- * Workflow per job:
- *   1. Skip if isListed === false
- *   2. Combine locations, run hasUSLocation()
- *   3. Run owner rules (sponsorship, clearance, location-require)
- *   4. Compute dedup hash, check 14-day window
- *   5. Strip null bytes, insert with expiresAt = now + 30 days
+ * Per-job parsing: malformed jobs are logged and skipped; good jobs flow.
  */
 async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
   const company = await prisma.company.findUniqueOrThrow({
@@ -122,20 +109,21 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     skippedRules: 0,
     skippedLocation: 0,
     skippedUnlisted: 0,
+    skippedMalformed: 0,
     errors: 0,
   };
 
-  let jobs: AshbyJob[];
+  let rawJobs: unknown[];
   try {
-    jobs = await fetchAshbyJobs(company.slug);
+    rawJobs = await fetchAshbyJobs(company.slug);
   } catch (err) {
     logger.error({ err: (err as Error).message, slug: company.slug }, "scrape.ashby.fetch_failed");
     outcome.errors = 1;
     return outcome;
   }
 
-  outcome.fetched = jobs.length;
-  logger.info({ slug: company.slug, fetched: jobs.length }, "scrape.ashby.fetched");
+  outcome.fetched = rawJobs.length;
+  logger.info({ slug: company.slug, fetched: rawJobs.length }, "scrape.ashby.fetched");
 
   // Load active rules once per company
   const rulesRaw = await prisma.scrapingRule.findMany({
@@ -153,8 +141,21 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
   const dedupCutoff = new Date(Date.now() - DEDUP_WINDOW_DAYS * 24 * 60 * 60 * 1000);
   const expiresAt = new Date(Date.now() + JOB_TTL_DAYS * 24 * 60 * 60 * 1000);
 
-  for (const j of jobs) {
-    // 1. Skip unlisted jobs (Ashby's flag for internal/draft postings)
+  for (const rawJob of rawJobs) {
+    // Per-job validation
+    let j: AshbyJob;
+    try {
+      j = parseAshbyJob(rawJob);
+    } catch (err) {
+      outcome.skippedMalformed += 1;
+      logger.warn(
+        { err: (err as Error).message, slug: company.slug },
+        "scrape.ashby.skip_malformed",
+      );
+      continue;
+    }
+
+    // 1. Skip unlisted jobs
     if (!j.isListed) {
       outcome.skippedUnlisted += 1;
       continue;
@@ -165,7 +166,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
 
     // 2. Description: prefer plain, fall back to stripped HTML
     const descriptionText =
-      (j.descriptionPlain ?? "").trim() || stripHtml(j.descriptionHtml).trim();
+      (j.descriptionPlain ?? "").trim() || stripHtml(j.descriptionHtml ?? undefined).trim();
 
     // 3. US location filter
     if (!hasUSLocation(locationText)) {
@@ -238,20 +239,12 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     },
   });
 
-  logger.info(
-    {
-      ...outcome,
-    },
-    "scrape.ashby.company_done",
-  );
-
+  logger.info({ ...outcome }, "scrape.ashby.company_done");
   return outcome;
 }
 
 /**
  * Scrape all (or filtered) active Ashby companies.
- *
- * @param onlySlugs - if provided, scrape only these slugs (e.g. ["openai"])
  */
 export async function scrapeAshby(onlySlugs?: string[]): Promise<ScrapeOutcome[]> {
   const where = {
@@ -285,6 +278,7 @@ export async function scrapeAshby(onlySlugs?: string[]): Promise<ScrapeOutcome[]
         skippedRules: 0,
         skippedLocation: 0,
         skippedUnlisted: 0,
+        skippedMalformed: 0,
         errors: 1,
       });
     }
@@ -298,6 +292,7 @@ export async function scrapeAshby(onlySlugs?: string[]): Promise<ScrapeOutcome[]
       acc.skippedRules += r.skippedRules;
       acc.skippedLocation += r.skippedLocation;
       acc.skippedUnlisted += r.skippedUnlisted;
+      acc.skippedMalformed += r.skippedMalformed;
       acc.errors += r.errors;
       return acc;
     },
@@ -308,6 +303,7 @@ export async function scrapeAshby(onlySlugs?: string[]): Promise<ScrapeOutcome[]
       skippedRules: 0,
       skippedLocation: 0,
       skippedUnlisted: 0,
+      skippedMalformed: 0,
       errors: 0,
     },
   );

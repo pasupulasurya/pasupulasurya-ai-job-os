@@ -4,7 +4,8 @@ import { hasUSLocation } from "@/server/services/scrapers/location";
 import { jobHash } from "@/server/services/scrapers/hash";
 import { applyRules, type OwnerRule, type RuleableJob } from "@/server/services/scrapers/rules";
 import {
-  parseGreenhouseResponse,
+  parseGreenhouseJobsArray,
+  parseGreenhouseJob,
   type GreenhouseJob,
 } from "@/server/services/scrapers/greenhouse.schema";
 
@@ -20,13 +21,13 @@ export interface ScrapeOutcome {
   skippedDedup: number;
   skippedRules: number;
   skippedLocation: number;
+  skippedMalformed: number;
   errors: number;
 }
+
 /**
  * Recursively strip null bytes from any string in a JSON-like object.
  * Postgres TEXT/JSONB reject 0x00 bytes; this guarantees we never send them.
- *
- * Pure function: returns a new value, does not mutate the input.
  */
 function stripNullBytes(value: unknown): unknown {
   if (typeof value === "string") {
@@ -46,8 +47,7 @@ function stripNullBytes(value: unknown): unknown {
 }
 
 /**
- * Strip HTML tags and decode common entities to get plain text from
- * Greenhouse's `content` field (which is HTML).
+ * Strip HTML tags and decode common entities to plain text.
  */
 function stripHtml(html: string | undefined): string {
   if (!html) return "";
@@ -65,10 +65,10 @@ function stripHtml(html: string | undefined): string {
 }
 
 /**
- * Fetch + Zod-validate one Greenhouse board's jobs.
- * Throws on HTTP error or malformed response.
+ * Fetch Greenhouse board response, validate only the top-level shape.
+ * Returns the raw jobs array; per-job parsing happens in the loop.
  */
-async function fetchGreenhouseJobs(slug: string): Promise<GreenhouseJob[]> {
+async function fetchGreenhouseJobs(slug: string): Promise<unknown[]> {
   const url = `${GREENHOUSE_API}/${slug}/jobs?content=true`;
   const res = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": USER_AGENT },
@@ -79,12 +79,16 @@ async function fetchGreenhouseJobs(slug: string): Promise<GreenhouseJob[]> {
   }
 
   const raw: unknown = await res.json();
-  const parsed = parseGreenhouseResponse(raw);
-  return parsed.jobs;
+  return parseGreenhouseJobsArray(raw);
 }
 
 /**
  * Scrape one Greenhouse company end-to-end.
+ *
+ * Per-job parsing: each job is validated individually. If one job has
+ * a malformed shape, it's logged and skipped — the rest of the company's
+ * jobs flow through. This makes the scraper robust against schema drift
+ * at scale.
  */
 async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
   const company = await prisma.company.findUnique({
@@ -104,6 +108,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     skippedDedup: 0,
     skippedRules: 0,
     skippedLocation: 0,
+    skippedMalformed: 0,
     errors: 0,
   };
 
@@ -120,15 +125,14 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     appliesTo: r.appliesTo,
   }));
 
-  // Compute the dedup cutoff and expiry once
   const now = new Date();
   const dedupCutoff = new Date(now.getTime() - DEDUP_WINDOW_DAYS * 86_400_000);
   const expiresAt = new Date(now.getTime() + JOB_TTL_DAYS * 86_400_000);
 
-  // Fetch jobs
-  let jobs: GreenhouseJob[];
+  // Fetch raw jobs (no per-job validation yet)
+  let rawJobs: unknown[];
   try {
-    jobs = await fetchGreenhouseJobs(company.slug);
+    rawJobs = await fetchGreenhouseJobs(company.slug);
   } catch (err) {
     logger.error(
       { err: (err as Error).message, slug: company.slug },
@@ -138,10 +142,24 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     return outcome;
   }
 
-  outcome.fetched = jobs.length;
-  logger.info({ slug: company.slug, fetched: jobs.length }, "scrape.greenhouse.fetched");
+  outcome.fetched = rawJobs.length;
+  logger.info({ slug: company.slug, fetched: rawJobs.length }, "scrape.greenhouse.fetched");
 
-  for (const j of jobs) {
+  for (const rawJob of rawJobs) {
+    // Per-job validation. A single malformed job is logged and skipped;
+    // good jobs from the same company keep flowing.
+    let j: GreenhouseJob;
+    try {
+      j = parseGreenhouseJob(rawJob);
+    } catch (err) {
+      outcome.skippedMalformed += 1;
+      logger.warn(
+        { err: (err as Error).message, slug: company.slug },
+        "scrape.greenhouse.skip_malformed",
+      );
+      continue;
+    }
+
     const locationText = j.location.name.replace(/\u0000/g, "");
     const titleText = j.title.replace(/\u0000/g, "");
     const descriptionText = stripHtml(j.content);
@@ -198,8 +216,6 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
       });
       outcome.insertedNew += 1;
     } catch (err) {
-      // Most likely cause: Postgres UNIQUE on sourceUrl. That's expected,
-      // not a real error — count it as dedup.
       const msg = (err as Error).message;
       if (msg.includes("Unique constraint") || msg.includes("sourceUrl")) {
         outcome.skippedDedup += 1;
@@ -225,8 +241,6 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
 
 /**
  * Scrape all (or filtered) active Greenhouse companies.
- *
- * @param onlySlugs - if provided, scrape only these slugs (e.g. ["anthropic"])
  */
 export async function scrapeGreenhouse(onlySlugs?: string[]): Promise<ScrapeOutcome[]> {
   const where = {
@@ -262,6 +276,7 @@ export async function scrapeGreenhouse(onlySlugs?: string[]): Promise<ScrapeOutc
         skippedDedup: 0,
         skippedRules: 0,
         skippedLocation: 0,
+        skippedMalformed: 0,
         errors: 1,
       });
     }
@@ -274,6 +289,7 @@ export async function scrapeGreenhouse(onlySlugs?: string[]): Promise<ScrapeOutc
       acc.skippedDedup += r.skippedDedup;
       acc.skippedRules += r.skippedRules;
       acc.skippedLocation += r.skippedLocation;
+      acc.skippedMalformed += r.skippedMalformed;
       acc.errors += r.errors;
       return acc;
     },
@@ -283,6 +299,7 @@ export async function scrapeGreenhouse(onlySlugs?: string[]): Promise<ScrapeOutc
       skippedDedup: 0,
       skippedRules: 0,
       skippedLocation: 0,
+      skippedMalformed: 0,
       errors: 0,
     },
   );
