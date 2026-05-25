@@ -22,7 +22,7 @@ export const GreenhouseMetadataSchema = z
   .object({
     id: z.number(),
     name: z.string(),
-    value: z.union([z.string(), z.array(z.string()), z.null()]),
+    value: z.union([z.string(), z.array(z.string()), z.null(), z.boolean()]),
     value_type: z.string(),
   })
   .passthrough();
