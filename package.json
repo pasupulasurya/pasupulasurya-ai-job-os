@@ -15,7 +15,8 @@
     "db:studio": "dotenv -e .env.local -- prisma studio",
     "db:generate": "dotenv -e .env.local -- prisma generate",
     "db:seed": "dotenv -e .env.local -- tsx prisma/seed.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "scrape:gh": "dotenv -e .env.local -- tsx scripts/scrape.ts greenhouse"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
