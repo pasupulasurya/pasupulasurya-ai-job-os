@@ -18,7 +18,8 @@
     "prepare": "husky",
     "scrape:gh": "dotenv -e .env.local -- tsx scripts/scrape.ts greenhouse",
     "scrape:ashby": "dotenv -e .env.local -- tsx scripts/scrape.ts ashby",
-    "cleanup": "dotenv -e .env.local -- tsx scripts/cleanup.ts"
+    "cleanup": "dotenv -e .env.local -- tsx scripts/cleanup.ts",
+    "enrich": "dotenv -e .env.local -- tsx scripts/enrich.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
