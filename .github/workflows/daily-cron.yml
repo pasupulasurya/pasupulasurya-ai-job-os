@@ -11,12 +11,14 @@ jobs:
   daily:
     name: Scrape + cleanup
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
       SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
     steps:
       - name: Checkout
@@ -44,6 +46,12 @@ jobs:
         run: npx tsx scripts/scrape.ts ashby
         continue-on-error: true
 
-      # Cleanup — runs even if scrapes failed (it's independent of fresh inserts)
+      # Enrich new jobs with AI fields. Idempotent — skips already-enriched.
+      # Aborts cleanly on 429 (daily rate limit). Resumes next day.
+      - name: Enrich jobs
+        run: npx tsx scripts/enrich.ts
+        continue-on-error: true
+
+      # Cleanup — runs even if previous steps failed
       - name: Cleanup
         run: npx tsx scripts/cleanup.ts
