@@ -113,6 +113,8 @@ model Job {
   sponsorsVisa      Boolean? // null = unknown
   stemOptFriendly   Boolean?
   postedAt          DateTime?
+  enrichedAt          DateTime?
+  enrichmentVersion   String?
 
   scrapedAt       DateTime @default(now())
   expiresAt   DateTime?
