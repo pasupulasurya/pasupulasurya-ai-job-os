@@ -13,6 +13,8 @@ import {
 export const ENRICHMENT_VERSION = "groq-llama-3.3-70b-v1";
 const DESCRIPTION_TRUNCATE_CHARS = 4000;
 const MAX_SKILLS = 20;
+const THROTTLE_MS = 500;
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export const EnrichmentSchema = z.object({
   seniority: z.enum(["entry", "mid", "senior", "staff"]).nullable(),
@@ -149,6 +151,7 @@ export async function enrichJobs(opts: EnrichOptions = {}): Promise<EnrichSummar
         },
         "ai.enrich.job.success",
       );
+      await sleep(THROTTLE_MS);
     } catch (err) {
       if (err instanceof LLMAuthError) {
         logger.error({ err: err.message }, "ai.enrich.run.aborted.auth");
