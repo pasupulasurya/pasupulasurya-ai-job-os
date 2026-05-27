@@ -138,45 +138,45 @@ Core: `id, userId (REQUIRED), jobId (optional), contentJson, pdfUrl, docxUrl, cr
 
 ## 4. LOCKED DECISIONS (do not re-discuss)
 
-| Decision                    | Value                                                                              |
-| --------------------------- | ---------------------------------------------------------------------------------- |
-| **FREE TIER ONLY**          | **No paid APIs ever. Paying a penny is the defeat condition.**                     |
-| Job TTL                     | 30 days for unmatched jobs                                                         |
-| UserJobMatch auto-dismiss   | 7 days unviewed                                                                    |
-| Application archival        | 90 days after rejection                                                            |
-| Dedup window                | 14 days (sha256 of company\|title\|location)                                       |
-| Cleanup model               | **User-driven, not time-driven**                                                   |
-| Repository pattern          | NO — direct Prisma                                                                 |
-| **AI architecture**         | **Per-task free-tier model selection via `params.model` override (see below)**     |
-| Enrichment model            | `llama-3.1-8b-instant` (Groq free, 500k TPD)                                       |
-| Resume parsing model        | `llama-3.3-70b-versatile` (Groq free, quality matters)                             |
-| Reason generator model      | `llama-3.1-8b-instant` (Groq free, batched per-user)                               |
-| Resume tailoring model      | `llama-3.3-70b-versatile` split 50/50 across Groq + Cerebras (both free)           |
-| Skill match                 | String intersection (lowercase + word boundary). Embeddings deferred to Phase 2H+. |
-| Groq free tier (8b-instant) | 14,400 RPD / 30,000 TPM / 500,000 TPD                                              |
-| Groq free tier (70b)        | 1,000 RPD / 6,000 TPM / 100,000 TPD                                                |
-| Cerebras free tier          | (verify on signup) — used as 70b redundancy for tailoring                          |
-| Enrichment version          | `groq-llama-3.1-8b-v2`                                                             |
-| Enrichment throttle         | 500ms between successful jobs                                                      |
-| Enrichment max_tokens       | 512                                                                                |
-| Enrichment truncation       | 2,000 chars (was 4,000 — signals are in first paragraphs)                          |
-| Resume parse version        | `groq-llama-3.3-70b-resume-v2`                                                     |
-| Resume parse max_tokens     | 4096                                                                               |
-| Resume parse truncation     | 12,000 chars                                                                       |
-| Resume MAX_SKILLS           | 80 (was 50; some senior resumes have 60+)                                          |
-| LLM error handling          | Auth/rate-limit → abort batch; validation/transport → log+continue                 |
-| LLM cron schedules          | scrape+cleanup 11:00 UTC, enrich 12:00 UTC                                         |
-| **Master/Tailored split**   | Master locked truth; tailoring rewrites summary/skills/bullets only                |
-| Master switching            | Non-destructive (preserve provenance)                                              |
-| **Matcher version**         | `matcher-v1`                                                                       |
-| **Matcher weights**         | titleKeywords=25, skills=20, seniority=15, sponsorship=15, location=15, salary=10  |
-| **Matcher saturation**      | 1 kw match=0.7, 2=0.9, 3+=1.0                                                      |
-| **Matcher skill dampen**    | <3 job skills → score scaled by (count/3)                                          |
-| **Matcher relevance gate**  | Cap at 35 if titleKw=0 AND skills=0 AND both have data                             |
-| **Matcher word matching**   | Word-boundary regex (prevents "llm" matching "fulfillment")                        |
-| MIN_SCORE_TO_PERSIST        | 40 (calibrated for current data sparsity; revisit when enrichment ≥50%)            |
-| Resume file types accepted  | PDF + plain text (DOCX deferred); 5 MB max                                         |
-| Schema strictness           | Strict on fields we use; permissive on metadata                                    |
+| Decision                    | Value                                                                                          |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| **FREE TIER ONLY**          | **No paid APIs ever. Paying a penny is the defeat condition.**                                 |
+| Job TTL                     | 30 days for unmatched jobs                                                                     |
+| UserJobMatch auto-dismiss   | 7 days unviewed                                                                                |
+| Application archival        | 90 days after rejection                                                                        |
+| Dedup window                | 14 days (sha256 of company\|title\|location)                                                   |
+| Cleanup model               | **User-driven, not time-driven**                                                               |
+| Repository pattern          | NO — direct Prisma                                                                             |
+| **AI architecture**         | **Per-task free-tier model selection via `params.model` override (see below)**                 |
+| Enrichment model            | `llama-3.1-8b-instant` (Groq free, 500k TPD)                                                   |
+| Resume parsing model        | `llama-3.3-70b-versatile` (Groq free, quality matters)                                         |
+| Reason generator model      | `llama-3.3-70b-versatile` (Groq free, batched per-user; 8b followed style instructions poorly) |
+| Resume tailoring model      | `llama-3.3-70b-versatile` split 50/50 across Groq + Cerebras (both free)                       |
+| Skill match                 | String intersection (lowercase + word boundary). Embeddings deferred to Phase 2H+.             |
+| Groq free tier (8b-instant) | 14,400 RPD / 30,000 TPM / 500,000 TPD                                                          |
+| Groq free tier (70b)        | 1,000 RPD / 6,000 TPM / 100,000 TPD                                                            |
+| Cerebras free tier          | (verify on signup) — used as 70b redundancy for tailoring                                      |
+| Enrichment version          | `groq-llama-3.1-8b-v2`                                                                         |
+| Enrichment throttle         | 500ms between successful jobs                                                                  |
+| Enrichment max_tokens       | 512                                                                                            |
+| Enrichment truncation       | 2,000 chars (was 4,000 — signals are in first paragraphs)                                      |
+| Resume parse version        | `groq-llama-3.3-70b-resume-v2`                                                                 |
+| Resume parse max_tokens     | 4096                                                                                           |
+| Resume parse truncation     | 12,000 chars                                                                                   |
+| Resume MAX_SKILLS           | 80 (was 50; some senior resumes have 60+)                                                      |
+| LLM error handling          | Auth/rate-limit → abort batch; validation/transport → log+continue                             |
+| LLM cron schedules          | scrape+cleanup 11:00 UTC, enrich 12:00 UTC                                                     |
+| **Master/Tailored split**   | Master locked truth; tailoring rewrites summary/skills/bullets only                            |
+| Master switching            | Non-destructive (preserve provenance)                                                          |
+| **Matcher version**         | `matcher-v1`                                                                                   |
+| **Matcher weights**         | titleKeywords=25, skills=20, seniority=15, sponsorship=15, location=15, salary=10              |
+| **Matcher saturation**      | 1 kw match=0.7, 2=0.9, 3+=1.0                                                                  |
+| **Matcher skill dampen**    | <3 job skills → score scaled by (count/3)                                                      |
+| **Matcher relevance gate**  | Cap at 35 if titleKw=0 AND skills=0 AND both have data                                         |
+| **Matcher word matching**   | Word-boundary regex (prevents "llm" matching "fulfillment")                                    |
+| MIN_SCORE_TO_PERSIST        | 40 (calibrated for current data sparsity; revisit when enrichment ≥50%)                        |
+| Resume file types accepted  | PDF + plain text (DOCX deferred); 5 MB max                                                     |
+| Schema strictness           | Strict on fields we use; permissive on metadata                                                |
 
 ---
 

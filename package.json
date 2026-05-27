@@ -25,6 +25,8 @@
     "parse:resume": "dotenv -e .env.local -- tsx scripts/parse-resume.ts",
     "match": "dotenv -e .env.local -- tsx scripts/match.ts",
     "match": "dotenv -e .env.local -- tsx scripts/match.ts",
+    "match": "dotenv -e .env.local -- tsx scripts/match.ts",
+    "reasons": "dotenv -e .env.local -- tsx scripts/reasons.ts",
     "seed:resume": "dotenv -e .env.local -- tsx scripts/seed-master-resume.ts"
   },
   "dependencies": {
