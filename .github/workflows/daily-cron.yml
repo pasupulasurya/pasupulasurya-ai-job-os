@@ -1,24 +1,22 @@
 name: Daily scrape + cleanup
 
 # Runs every day at 11:00 UTC (= 04:00 PT / 07:00 ET)
-# Can also be triggered manually from the Actions tab
+# Enrichment lives in daily-enrich.yml (runs 1 hour later).
 on:
   schedule:
     - cron: "0 11 * * *"
-  workflow_dispatch: {} # enables manual "Run workflow" button
+  workflow_dispatch: {}
 
 jobs:
   daily:
     name: Scrape + cleanup
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DIRECT_URL: ${{ secrets.DIRECT_URL }}
       SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
 
     steps:
       - name: Checkout
@@ -46,12 +44,6 @@ jobs:
         run: npx tsx scripts/scrape.ts ashby
         continue-on-error: true
 
-      # Enrich new jobs with AI fields. Idempotent — skips already-enriched.
-      # Aborts cleanly on 429 (daily rate limit). Resumes next day.
-      - name: Enrich jobs
-        run: npx tsx scripts/enrich.ts
-        continue-on-error: true
-
-      # Cleanup — runs even if previous steps failed
+      # Cleanup — runs even if scrapes failed (it's independent of fresh inserts)
       - name: Cleanup
         run: npx tsx scripts/cleanup.ts

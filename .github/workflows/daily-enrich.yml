@@ -1,0 +1,42 @@
+name: Daily enrich
+
+# Runs every day at 12:00 UTC (= 05:00 PT / 08:00 ET)
+# 1 hour after daily-cron.yml so scrapes have finished.
+# Long timeout because enrichment is rate-limited and may take 30+ min
+# during backfill. Idempotent — safe to time out and resume tomorrow.
+on:
+  schedule:
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  enrich:
+    name: Enrich jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DIRECT_URL: ${{ secrets.DIRECT_URL }}
+      SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+      LLM_PROVIDER: ${{ secrets.LLM_PROVIDER }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Enrich jobs
+        run: npx tsx scripts/enrich.ts
