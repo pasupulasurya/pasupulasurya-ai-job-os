@@ -1,7 +1,7 @@
 # AI Job OS — Session Context
 
 > **Paste this file at the start of every new session with Claude.**
-> Last updated: 2026-05-27 mid-day (free-tier-only locked; enrichment model switched to 8b-instant)
+> Last updated: 2026-05-27 evening (Phase 2E.3.A shipped — functional dashboard live)
 
 For wider context, also point readers at:
 
@@ -45,16 +45,11 @@ One accent: `#0A84FF`. Lucide icons at stroke 1.5. Dark default, light is a port
 - **Phase 2D:** LLM provider abstraction, Groq impl with retry+throttle, enrichment orchestrator, CLI, split cron workflows (`daily-cron.yml` + `daily-enrich.yml`)
 - **Phase 2E.1:** Schema expansion (UserPreference +7, ResumeVersion +7), expanded Zod, updated Server Actions, resume parser (`parse-resume.ts`), upload Server Action (`uploadMasterResumeAction`), CLI smoke test (`npm run parse:resume`). Verified end-to-end on real PDF.
 - **Phase 2E.2.A:** Matcher backend — scoring engine, hard filters, orchestrator, CLI. 6 weighted dimensions, saturating title curve, word-boundary keyword matching, conditional relevance gate, sparsity dampening. Verified against real user (top 3 are real ML engineering jobs ranked above sales noise).
-- **Phase 2E.2.A-fix (mid-session 2026-05-27):** Switched enrichment model llama-3.3-70b-versatile → llama-3.1-8b-instant (free tier, 5× TPD ceiling: 500k vs 100k). Truncated job descriptions 4000 → 2000 chars (signals are in first paragraphs anyway). Added `model?: string` override to `LLMGenerateParams` so different tasks can use different free-tier models without env-var changes.
+- **Phase 2E.2.A-fix (2026-05-27):** Per-task LLM model override via `LLMGenerateParams.model`. Enrichment switched llama-3.3-70b-versatile → llama-3.1-8b-instant (5× TPD ceiling: 500k vs 100k). Truncated descriptions 4000 → 2000 chars (signals are in first paragraphs). Resume parser keeps 70b default. Triggers full re-enrichment via idempotency predicate.
+- **Phase 2E.2.B (2026-05-27):** Match reason generator — `src/server/services/matcher/reason.ts`. Batched per-user (ONE LLM call returns reasons for top-10 matches). Initially tried 8b-instant; produced formulaic identical openings even with style instructions. Switched to llama-3.3-70b-versatile (Groq free, 100k TPD). Integrity rule honored: reasons reference facts from BOTH resume and JD, never fabricate. Verified end-to-end: 4/4 reasons generated; model honestly flagged a sales role as "not a direct match" without overselling.
+- **Phase 2E.3.A (2026-05-27):** Functional dashboard at `/dashboard`. Server Component with auth gate + routing state machine. Top-10 match cards with score badge, LLM reason paragraph, three actions (dismiss/view/apply). Server Actions enforce ownership (matchId AND userId filter before mutation). Empty state with rotating progress phrases + auto-trigger of matcher. Dismissal persists across refreshes. Inline resume upload placeholder (proper route deferred). End-to-end verified against real DB.
 
-**Total in DB right now: 1,337 real US jobs. ~123 jobs enriched (under old version). After mid-session model change, ENRICHMENT_VERSION = `groq-llama-3.1-8b-v2` triggers full re-enrichment via idempotency predicate.**
-
-**The enrichment rate problem (solution path locked, no paid APIs):**
-
-- **Old constraint:** llama-3.3-70b-versatile @ 100k TPD = ~250-300 jobs/day. Full backfill 4-5 days.
-- **New constraint:** llama-3.1-8b-instant @ 500k TPD = ~1,500-2,000 jobs/day. Full backfill <24h.
-- **Cerebras free tier** (signing up, no card) provides redundant llama-3.3-70b capacity for resume tailoring (Phase 2G).
-- **For 10 friends × 4 resumes/day workload:** Groq + Cerebras split handles it. ~330k tokens/day, well within combined free tiers.
+**Total in DB: 1,337 real US jobs. Enrichment backfill is mid-flight under the new groq-llama-3.1-8b-v2 version (started 2026-05-27 evening). Match data will densify naturally as backfill completes.**
 
 ---
 
@@ -78,7 +73,7 @@ Core: `keywords[], excludeKeywords[], locations[], jobTypes[], experienceMin, ex
 - `salaryMin` (Int?) — annual USD
 - `currentEmployment` (String?) — "employed" | "unemployed" | "student" | "freelance"
 - `targetRoles` (String[] default []), `avoidCompanies` (String[] default [])
-- `onboardingComplete` (Boolean default false)
+- `onboardingComplete` (Boolean default false) — present in schema but NOT used by dashboard gate; dashboard checks `keywords.length > 0` instead. The flag is reserved for the proper multi-step onboarding (Phase 2E.3.B).
 
 Canonical enums in `src/shared/schemas/preferences.ts`: `visaTypeValues`, `workAuthStatusValues`, `currentEmploymentValues`.
 
@@ -105,8 +100,8 @@ Enrichment metadata: `enrichedAt`, `enrichmentVersion` (current: `groq-llama-3.1
 Core: `id, userId, jobId, matchScore, status, matchedAt, viewedAt, dismissedAt, dismissed, autoDismissed`
 2E.2 fields:
 
-- `scoreBreakdown` (Json?) — per-dimension contributions for "why this score" UX
-- `reason` (Text?) — LLM-generated paragraph (NULL until 2E.2.B ships)
+- `scoreBreakdown` (Json?) — per-dimension contributions for "why this score" UX (rendered in 2E.3.B)
+- `reason` (Text?) — LLM-generated paragraph; populated by Phase 2E.2.B
 - `matchVersion` (String?) — current: `matcher-v1`
 - New index: `[userId, matchVersion]`
 - `status`: "fresh" | "viewed" | "applied" | "dismissed" | "rejected"
@@ -138,45 +133,52 @@ Core: `id, userId (REQUIRED), jobId (optional), contentJson, pdfUrl, docxUrl, cr
 
 ## 4. LOCKED DECISIONS (do not re-discuss)
 
-| Decision                    | Value                                                                                          |
-| --------------------------- | ---------------------------------------------------------------------------------------------- |
-| **FREE TIER ONLY**          | **No paid APIs ever. Paying a penny is the defeat condition.**                                 |
-| Job TTL                     | 30 days for unmatched jobs                                                                     |
-| UserJobMatch auto-dismiss   | 7 days unviewed                                                                                |
-| Application archival        | 90 days after rejection                                                                        |
-| Dedup window                | 14 days (sha256 of company\|title\|location)                                                   |
-| Cleanup model               | **User-driven, not time-driven**                                                               |
-| Repository pattern          | NO — direct Prisma                                                                             |
-| **AI architecture**         | **Per-task free-tier model selection via `params.model` override (see below)**                 |
-| Enrichment model            | `llama-3.1-8b-instant` (Groq free, 500k TPD)                                                   |
-| Resume parsing model        | `llama-3.3-70b-versatile` (Groq free, quality matters)                                         |
-| Reason generator model      | `llama-3.3-70b-versatile` (Groq free, batched per-user; 8b followed style instructions poorly) |
-| Resume tailoring model      | `llama-3.3-70b-versatile` split 50/50 across Groq + Cerebras (both free)                       |
-| Skill match                 | String intersection (lowercase + word boundary). Embeddings deferred to Phase 2H+.             |
-| Groq free tier (8b-instant) | 14,400 RPD / 30,000 TPM / 500,000 TPD                                                          |
-| Groq free tier (70b)        | 1,000 RPD / 6,000 TPM / 100,000 TPD                                                            |
-| Cerebras free tier          | (verify on signup) — used as 70b redundancy for tailoring                                      |
-| Enrichment version          | `groq-llama-3.1-8b-v2`                                                                         |
-| Enrichment throttle         | 500ms between successful jobs                                                                  |
-| Enrichment max_tokens       | 512                                                                                            |
-| Enrichment truncation       | 2,000 chars (was 4,000 — signals are in first paragraphs)                                      |
-| Resume parse version        | `groq-llama-3.3-70b-resume-v2`                                                                 |
-| Resume parse max_tokens     | 4096                                                                                           |
-| Resume parse truncation     | 12,000 chars                                                                                   |
-| Resume MAX_SKILLS           | 80 (was 50; some senior resumes have 60+)                                                      |
-| LLM error handling          | Auth/rate-limit → abort batch; validation/transport → log+continue                             |
-| LLM cron schedules          | scrape+cleanup 11:00 UTC, enrich 12:00 UTC                                                     |
-| **Master/Tailored split**   | Master locked truth; tailoring rewrites summary/skills/bullets only                            |
-| Master switching            | Non-destructive (preserve provenance)                                                          |
-| **Matcher version**         | `matcher-v1`                                                                                   |
-| **Matcher weights**         | titleKeywords=25, skills=20, seniority=15, sponsorship=15, location=15, salary=10              |
-| **Matcher saturation**      | 1 kw match=0.7, 2=0.9, 3+=1.0                                                                  |
-| **Matcher skill dampen**    | <3 job skills → score scaled by (count/3)                                                      |
-| **Matcher relevance gate**  | Cap at 35 if titleKw=0 AND skills=0 AND both have data                                         |
-| **Matcher word matching**   | Word-boundary regex (prevents "llm" matching "fulfillment")                                    |
-| MIN_SCORE_TO_PERSIST        | 40 (calibrated for current data sparsity; revisit when enrichment ≥50%)                        |
-| Resume file types accepted  | PDF + plain text (DOCX deferred); 5 MB max                                                     |
-| Schema strictness           | Strict on fields we use; permissive on metadata                                                |
+| Decision                      | Value                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------- |
+| **FREE TIER ONLY**            | **No paid APIs ever. Paying a penny is the defeat condition.**                              |
+| Job TTL                       | 30 days for unmatched jobs                                                                  |
+| UserJobMatch auto-dismiss     | 7 days unviewed                                                                             |
+| Application archival          | 90 days after rejection                                                                     |
+| Dedup window                  | 14 days (sha256 of company\|title\|location)                                                |
+| Cleanup model                 | **User-driven, not time-driven**                                                            |
+| Repository pattern            | NO — direct Prisma                                                                          |
+| **AI architecture**           | **Per-task free-tier model selection via `params.model` override (see below)**              |
+| Enrichment model              | `llama-3.1-8b-instant` (Groq free, 500k TPD)                                                |
+| Resume parsing model          | `llama-3.3-70b-versatile` (Groq free, quality matters)                                      |
+| Reason generator model        | `llama-3.3-70b-versatile` (8b followed style instructions poorly; varied openings need 70b) |
+| Resume tailoring model        | `llama-3.3-70b-versatile` split 50/50 across Groq + Cerebras (both free, planned)           |
+| Skill match                   | String intersection (lowercase + word boundary). Embeddings deferred to Phase 2H+.          |
+| Groq free tier (8b-instant)   | 14,400 RPD / 30,000 TPM / 500,000 TPD                                                       |
+| Groq free tier (70b)          | 1,000 RPD / 6,000 TPM / 100,000 TPD                                                         |
+| Cerebras free tier            | (verify on signup) — used as 70b redundancy for tailoring                                   |
+| Enrichment version            | `groq-llama-3.1-8b-v2`                                                                      |
+| Enrichment throttle           | 500ms between successful jobs                                                               |
+| Enrichment max_tokens         | 512                                                                                         |
+| Enrichment truncation         | 2,000 chars (was 4,000 — signals are in first paragraphs)                                   |
+| Resume parse version          | `groq-llama-3.3-70b-resume-v2`                                                              |
+| Resume parse max_tokens       | 4096                                                                                        |
+| Resume parse truncation       | 12,000 chars                                                                                |
+| Resume MAX_SKILLS             | 80 (was 50; some senior resumes have 60+)                                                   |
+| Reason version                | `groq-llama-3.3-70b-reason-v1`                                                              |
+| Reason max_tokens             | 2048                                                                                        |
+| Reason batch size             | 10 jobs per LLM call (top-N for the user)                                                   |
+| Reason per-row length cap     | 900 chars (Zod schema; 600 was too tight)                                                   |
+| LLM error handling            | Auth/rate-limit → abort batch; validation/transport → log+continue                          |
+| LLM cron schedules            | scrape+cleanup 11:00 UTC, enrich 12:00 UTC                                                  |
+| **Master/Tailored split**     | Master locked truth; tailoring rewrites summary/skills/bullets only                         |
+| Master switching              | Non-destructive (preserve provenance)                                                       |
+| **Matcher version**           | `matcher-v1`                                                                                |
+| **Matcher weights**           | titleKeywords=25, skills=20, seniority=15, sponsorship=15, location=15, salary=10           |
+| **Matcher saturation**        | 1 kw match=0.7, 2=0.9, 3+=1.0                                                               |
+| **Matcher skill dampen**      | <3 job skills → score scaled by (count/3)                                                   |
+| **Matcher relevance gate**    | Cap at 35 if titleKw=0 AND skills=0 AND both have data                                      |
+| **Matcher word matching**     | Word-boundary regex (prevents "llm" matching "fulfillment")                                 |
+| MIN_SCORE_TO_PERSIST          | 40 (calibrated for current data sparsity; revisit when enrichment ≥50%)                     |
+| **Dashboard onboarding gate** | `keywords.length > 0` (NOT `onboardingComplete`) — flag reserved for Phase 2E.3.B           |
+| **Empty state UX**            | Auto-trigger matcher + rotating progress phrases (every 2.5s) + AnimatePresence             |
+| **Action ownership check**    | All match Server Actions filter on BOTH matchId AND userId before mutation                  |
+| Resume file types accepted    | PDF + plain text (DOCX deferred); 5 MB max                                                  |
+| Schema strictness             | Strict on fields we use; permissive on metadata                                             |
 
 ---
 
@@ -189,23 +191,35 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 ### AI services (`src/server/services/ai/`)
 
 - `llm.ts` — provider-agnostic interface with per-call `model?` override, typed error hierarchy, factory
-- `groq-provider.ts` — Groq impl with retry, timeout, Retry-After
-- `cerebras-provider.ts` — (planned today) Cerebras impl, same interface
+- `groq-provider.ts` — Groq impl with retry, timeout, Retry-After. Honors `params.model ?? this.model`
 - `enrich.ts` — job enrichment orchestrator (uses `model: ENRICHMENT_MODEL` per call)
 - `parse-resume.ts` — resume parser (no model override; uses provider default 70b)
-- `reason.ts` — (planned today, Phase 2E.2.B) match reason generator
 
 ### Matcher (`src/server/services/matcher/`)
 
 - `score.ts` — pure scoring functions (6 dimensions, weighted composition)
 - `filters.ts` — hard pre-filters (exclude keywords, avoid companies, sponsorship)
 - `match.ts` — orchestrator (idempotency, upsert, status preservation)
+- `reason.ts` — batched per-user reason generator (70b, integrity rule)
 
 ### Server Actions (`src/server/actions/`)
 
 - `auth.ts` — signup/signin/signout
 - `preferences.ts` — save UserPreference (15 fields total)
 - `resume.ts` — uploadMasterResumeAction (5MB cap, atomic master-switch)
+- `match.ts` — markViewed / dismiss / markApplied / triggerMatcher (all ownership-checked)
+
+### App routes (`src/app/`)
+
+- `/login`, `/signup` (Phase 2B)
+- `/onboarding/preferences` (Phase 2B; still primary collection surface)
+- `/dashboard` (Phase 2E.3.A) — daily briefing, the showpiece surface
+- `/settings`, `/onboarding/resume` — planned for 2E.3.B
+
+### Dashboard components (`src/app/dashboard/_components/`)
+
+- `match-card.tsx` — single match with score badge, reason, action buttons. Optimistic UI via useTransition.
+- `empty-state.tsx` — auto-triggers matcher; cycles 6 progress phrases via AnimatePresence; resolves to results or honest no-match message.
 
 ### CLI scripts (`scripts/`)
 
@@ -216,6 +230,8 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 - `seed-master-resume.ts` — `seed:resume -- --user=<id> --file=<path>` (dev helper)
 - `match.ts` — `match`, `match -- --user=<id> --force --limit=N --dry-run`
 - `top-matches.ts` — inspect top N stored matches
+- `reasons.ts` — `reasons`, `reasons -- --user=<id> --force --limit=N --dry-run`
+- `show-reasons.ts` — dev helper, inspect stored reasons alongside matches
 
 ### GitHub Actions
 
@@ -226,34 +242,26 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 
 ## 6. WHAT REMAINS
 
-### Phase 2E.2.B — Reason generator (today, ~3-4h)
+### Phase 2E.3.B — Cinematic polish (next, multi-session, ~20-30h)
 
-- `src/server/services/matcher/reason.ts` — LLM call per top-N matched job using `llama-3.1-8b-instant` (free)
-- Produces 2-3 sentence "why this job, why now" paragraph stored in `UserJobMatch.reason`
-- Locked/Tailored integrity rule applies: reasons describe alignment between user's actual resume facts and job needs — no fabrication.
-- Prompt iteration is the long pole (~1-2h of "wrong tone, try again" cycles)
-- Batched per-user: one LLM call returns reasons for top-10 jobs at once
+Items deferred from today's functional subset:
 
-### Phase 2E.3.A — Functional dashboard (today/next, ~3-4h subset)
+1. **Stagger-in card animations** (Framer Motion choreography on mount)
+2. **Score reveal animation** — animated ring/number countdown using springs
+3. **Why-this-score expandable view** — dimensional breakdown bars (data already in scoreBreakdown JSON)
+4. **Mobile responsive** — every state needs mobile sizing
+5. **Full accessibility pass** — ARIA, keyboard nav, focus management
+6. **Keyboard shortcuts + command palette integration** (save/dismiss/next via keyboard)
+7. **Proper /onboarding/resume route** with drag-drop + AI-prefill confirmation (replace inline placeholder)
+8. **/settings route** — all UserPreference fields with proper edit UI
+9. **Choreographed multi-step onboarding** — 5-step flow with Framer Motion transitions
+10. **Loading skeletons + error boundaries** at polish level
 
-In-scope today (functional subset):
+### Phase 2E.4 — Wire matcher into daily cron (~2h)
 
-- Routes: `/dashboard`, `/onboarding/resume`, `/onboarding/preferences`, `/settings`
-- Auth-gated routing state machine
-- Resume upload UI (drag-drop + AI-prefill confirmation)
-- Basic daily briefing layout (cards, score, reason, basic actions)
-- "We're scanning 1,337 jobs for you" empty state with rotating phrases (auto-triggers matcher)
-- Settings page scaffolding
-
-Out of scope today (cinematic polish, Phase 2E.3.B next session):
-
-- Choreographed onboarding animations (Framer Motion springs)
-- Score reveal animations
-- Stagger-in card animations
-- Mobile responsive
-- Full accessibility pass
-- Why-this-score expandable view with dimensional bars
-- Keyboard shortcuts + command palette integration
+- Currently matcher runs on-demand only (dashboard empty state or CLI)
+- Wire `matchJobsForUser(allUsers)` into a third daily workflow OR extend `daily-enrich.yml`
+- Cron should also trigger `generateReasonsForUser` after the matcher
 
 ### Phase 2F — Vercel deploy (~3-4h)
 
@@ -264,6 +272,7 @@ Out of scope today (cinematic polish, Phase 2E.3.B next session):
 - Uses `llama-3.3-70b-versatile` split 50/50 Groq + Cerebras (both free)
 - Generates two outputs: ATS-plain version + human-preview version
 - Both single-page, both downloadable
+- Add Cerebras provider (`cerebras-provider.ts`) following same interface as Groq
 
 ### Phase 2H+ — Email digest, application auto-fill (Playwright, review-only), Gmail intelligence
 
@@ -277,48 +286,54 @@ Out of scope today (cinematic polish, Phase 2E.3.B next session):
 4. **GitHub Actions Node 20 deprecation** — June 2026, bump actions/checkout + actions/setup-node.
 5. **Non-technical roles return `skills: []`** — ~60% of jobs. Matcher conditional relevance gate handles correctly.
 6. **DOCX resume upload** — not implemented, clear error returned.
-7. **Enrichment data-rate** — was a bottleneck under 70b (100k TPD); model switch to 8b-instant (500k TPD) brings full backfill to <24h. No longer blocking.
-8. **Matcher data-limited (transient)** — 4 stored matches for test user. Will repopulate after 8b enrichment backfill completes (~24h) + re-run matcher.
+7. **Matcher not yet wired to daily cron** — runs only via dashboard empty-state action or CLI. Phase 2E.4 fixes this.
+8. **Dashboard greeting uses email prefix when User.name is null** — acceptable for v1; proper name collection in 2E.3.B onboarding.
+9. **Enrichment log misleading** — `log.model: llm.model` shows provider default (70b) while API actually receives override (8b-instant). Cosmetic only; refine in future cleanup.
 
 ### Recently resolved
 
 - ✅ Phase 2D shipped (LLM abstraction, Groq, enrichment, CLI, cron)
 - ✅ Cron timeout — split into two workflows
-- ✅ Phase 2E.1 backend shipped
-- ✅ Phase 2E.2.A backend shipped — matcher engine functional, correctness verified
-- ✅ Multiple matcher algorithm bugs caught and fixed: neutral-default inflation, sparsity-100% artifact, linear-divide penalty, "llm" matching inside "fulfillment"
-- ✅ MAX_SKILLS bumped 50→80 (Zod was rejecting valid senior resumes)
-- ✅ Mid-session 2026-05-27: enrichment switched to 8b-instant + truncation 4000→2000, free-tier-only constraint formally locked, per-task model architecture documented
+- ✅ Phase 2E.1 backend shipped (resume parser + upload)
+- ✅ Phase 2E.2.A backend shipped (matcher engine, multiple algorithm bugs caught and fixed)
+- ✅ MAX_SKILLS bumped 50→80
+- ✅ Free-tier-only constraint formally locked in CONTEXT.md
+- ✅ Phase 2E.2.A-fix: enrichment model switch + truncation
+- ✅ Phase 2E.2.B shipped (reason generator, 70b after 8b style failure)
+- ✅ Phase 2E.3.A shipped (functional dashboard with end-to-end action layer)
 
 ---
 
 ## 8. CRITICAL FILES (current repo state)
 
-| Concern         | Path                                                                                   |
-| --------------- | -------------------------------------------------------------------------------------- |
-| Front door      | `README.md`                                                                            |
-| System map      | `ARCHITECTURE.md`                                                                      |
-| Working rhythm  | `COLLABORATION.md`                                                                     |
-| Build narrative | `AI_JOB_OS_SESSION_JOURNAL.md`                                                         |
-| Vision          | `VISION.md`                                                                            |
-| Decisions       | `docs/adr/*.md`                                                                        |
-| Design DNA      | `docs/design/principles.md`                                                            |
-| Cron runbook    | `docs/runbooks/cron.md`                                                                |
-| Design tokens   | `src/styles/tokens.ts`, `src/app/globals.css`                                          |
-| Prisma schema   | `prisma/schema.prisma`                                                                 |
-| SQL triggers    | `prisma/sql/0001_auth_signup_trigger.sql`                                              |
-| Auth            | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts`   |
-| Preferences     | `src/server/actions/preferences.ts`, `src/app/onboarding/preferences/*`                |
-| Resume upload   | `src/server/actions/resume.ts`                                                         |
-| Resume parser   | `src/server/services/ai/parse-resume.ts`                                               |
-| Zod schemas     | `src/shared/schemas/preferences.ts`                                                    |
-| Command palette | `src/components/command-palette.tsx`                                                   |
-| Scrapers        | `src/server/services/scrapers/{greenhouse,ashby,location,hash,rules}.ts`               |
-| LLM provider    | `src/server/services/ai/{llm,groq-provider}.ts` (cerebras-provider.ts planned today)   |
-| Job enrichment  | `src/server/services/ai/enrich.ts`                                                     |
-| Matcher         | `src/server/services/matcher/{score,filters,match}.ts`                                 |
-| CLIs            | `scripts/{scrape,cleanup,enrich,parse-resume,seed-master-resume,match,top-matches}.ts` |
-| GitHub Actions  | `.github/workflows/{daily-cron,daily-enrich}.yml`                                      |
+| Concern              | Path                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Front door           | `README.md`                                                                                                 |
+| System map           | `ARCHITECTURE.md`                                                                                           |
+| Working rhythm       | `COLLABORATION.md`                                                                                          |
+| Build narrative      | `AI_JOB_OS_SESSION_JOURNAL.md`                                                                              |
+| Vision               | `VISION.md`                                                                                                 |
+| Decisions            | `docs/adr/*.md`                                                                                             |
+| Design DNA           | `docs/design/principles.md`                                                                                 |
+| Cron runbook         | `docs/runbooks/cron.md`                                                                                     |
+| Design tokens        | `src/styles/tokens.ts`, `src/app/globals.css`                                                               |
+| Prisma schema        | `prisma/schema.prisma`                                                                                      |
+| SQL triggers         | `prisma/sql/0001_auth_signup_trigger.sql`                                                                   |
+| Auth                 | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts`                        |
+| Preferences          | `src/server/actions/preferences.ts`, `src/app/onboarding/preferences/*`                                     |
+| Resume upload action | `src/server/actions/resume.ts`                                                                              |
+| Resume parser        | `src/server/services/ai/parse-resume.ts`                                                                    |
+| Match Server Actions | `src/server/actions/match.ts`                                                                               |
+| Dashboard route      | `src/app/dashboard/page.tsx`                                                                                |
+| Dashboard components | `src/app/dashboard/_components/{match-card,empty-state}.tsx`                                                |
+| Zod schemas          | `src/shared/schemas/preferences.ts`                                                                         |
+| Command palette      | `src/components/command-palette.tsx`                                                                        |
+| Scrapers             | `src/server/services/scrapers/{greenhouse,ashby,location,hash,rules}.ts`                                    |
+| LLM provider         | `src/server/services/ai/{llm,groq-provider}.ts` (cerebras-provider.ts planned 2G)                           |
+| Job enrichment       | `src/server/services/ai/enrich.ts`                                                                          |
+| Matcher              | `src/server/services/matcher/{score,filters,match,reason}.ts`                                               |
+| CLIs                 | `scripts/{scrape,cleanup,enrich,parse-resume,seed-master-resume,match,top-matches,reasons,show-reasons}.ts` |
+| GitHub Actions       | `.github/workflows/{daily-cron,daily-enrich}.yml`                                                           |
 
 ---
 
@@ -350,22 +365,26 @@ When you update CONTEXT.md, re-upload to the project to replace.
 
 ---
 
-## 11. TODAY'S SESSION PLAN (2026-05-27 long session)
+## 11. NEXT SESSION CHECKLIST (priority order)
 
-In-scope, in order:
+Today (2026-05-27) shipped: enrichment model switch + reason generator (2E.2.B) + functional dashboard (2E.3.A). Enrichment backfill running in background — will densify match data over next 24h.
 
-1. ✅ **Free-tier-only constraint locked** in Section 1 + Section 4
-2. ✅ **Enrichment model switched** to llama-3.1-8b-instant + truncation 2000 chars
-3. **Add Cerebras provider** (~1h) — `cerebras-provider.ts`, factory case, smoke test, env var docs
-4. **Ship Phase 2E.2.B (reason generator)** (~3-4h) — `src/server/services/matcher/reason.ts`, batched per-user, llama-3.1-8b-instant, integration with matcher orchestrator, force re-run for all users
-5. **Phase 2E.3.A functional dashboard** (~3-4h subset) — routes, auth-gated routing, resume upload UI, basic briefing layout, "scanning for you" empty state
+**Next session priorities:**
 
-Out of scope today (Phase 2E.3.B next session):
+1. **Verify enrichment backfill landed.** Check job count where `enrichmentVersion = "groq-llama-3.1-8b-v2"`. Should be >1,000 by morning.
+2. **Re-run matcher with `--force --all-users`** to repopulate UserJobMatch against newly-enriched data. Expect score distribution to improve significantly — more jobs above 40, top scores higher than today's 55.
+3. **Re-run reason generator with `--force --all-users --limit=10`** to populate reasons for newly-promoted matches.
+4. **Phase 2E.3.B cinematic polish** — choose 1-2 items from the 10-item list in Section 6 per session. Recommended starting order:
+   - Score reveal animation (highest visual impact, ~3h)
+   - Stagger-in card entrance (anchors the cinematic feel, ~2h)
+   - Mobile responsive (real users on phones, ~6h)
+5. **Phase 2E.4 — wire matcher + reason generator to daily cron** (~2h, can pair with cinematic polish)
+6. **Phase 2E.3.B — proper /onboarding/resume + /settings routes** (each ~3-4h)
 
-- Cinematic animations (Framer Motion choreography)
-- Mobile responsive
-- Full a11y
-- Why-this-score expandable view
-- Score reveal animations
+**Not on critical path:**
+
+- Cerebras provider (Phase 2G dependency)
+- Vercel deploy (Phase 2F)
+- Resume tailoring (Phase 2G)
 
 ---
