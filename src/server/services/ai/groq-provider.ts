@@ -53,7 +53,7 @@ export class GroqProvider implements LLMProvider {
         method: "POST",
         headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: this.model,
+          model: params.model ?? this.model,
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },

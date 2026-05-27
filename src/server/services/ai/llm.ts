@@ -24,6 +24,7 @@ export interface LLMGenerateParams<T> {
   temperature?: number;
   maxTokens?: number;
   timeoutMs?: number;
+  model?: string;
 }
 export interface LLMProvider {
   readonly name: string;

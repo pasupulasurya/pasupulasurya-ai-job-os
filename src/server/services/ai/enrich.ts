@@ -10,8 +10,9 @@ import {
   LLMValidationError,
 } from "./llm";
 
-export const ENRICHMENT_VERSION = "groq-llama-3.3-70b-v1";
-const DESCRIPTION_TRUNCATE_CHARS = 4000;
+export const ENRICHMENT_VERSION = "groq-llama-3.1-8b-v2";
+const ENRICHMENT_MODEL = "llama-3.1-8b-instant";
+const DESCRIPTION_TRUNCATE_CHARS = 2000;
 const MAX_SKILLS = 20;
 const THROTTLE_MS = 500;
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -123,6 +124,7 @@ export async function enrichJobs(opts: EnrichOptions = {}): Promise<EnrichSummar
         user: __internals.buildUserPrompt(job.title, job.description),
         schema: EnrichmentSchema,
         maxTokens: 512,
+        model: ENRICHMENT_MODEL,
       });
       const clean = __internals.sanitize(raw);
       if (dryRun) {
