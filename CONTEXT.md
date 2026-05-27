@@ -1,7 +1,7 @@
 # AI Job OS — Session Context
 
 > **Paste this file at the start of every new session with Claude.**
-> Last updated: 2026-05-26 (Phase 2D Step 3 shipped, Step 4 partial)
+> Last updated: 2026-05-26 (Phase 2D closed, Phase 2E.1 backend shipped)
 
 For wider context, also point readers at:
 
@@ -34,6 +34,9 @@ One accent: `#0A84FF`. Lucide icons at stroke 1.5. Dark default, light is a port
 "Done" not "Yay! All done!" — direct, calm, never apologetic.
 No emojis in production UI. We are precise, never cute.
 
+**Product principle (locks into the architecture, not just the UI):**
+**Never fabricate content.** Resume tailoring rewrites and re-emphasizes, but cannot invent facts that aren't in the master resume. This is enforced via the locked/tailored split (see Section 4).
+
 ---
 
 ## 2. WHAT WE'VE BUILT (cumulative — all shipped to main)
@@ -41,19 +44,19 @@ No emojis in production UI. We are precise, never cute.
 - **Foundation (F1-F7):** VISION, ADRs, design tokens, observability, quality gates, command palette
 - **Phase 2A:** 10-table schema, 30 US companies seeded, 12 owner rules
 - **Phase 2B:** Supabase Auth + Resend SMTP + DB triggers + auth pages + middleware + onboarding
-- **Phase 2C.0:** Schema additions for lifecycle (expiresAt, deletedAt, UserJobMatch.status, archivedAt, UserBlockedCompany)
-- **Phase 2C.1:** Greenhouse scraper — 913 real US jobs from 11 companies
-- **Phase 2C.3:** Ashby scraper — 138 jobs from 6 companies (OpenAI, Notion, Snowflake, Perplexity, Plaid, Ramp)
-- **Phase 2C.4:** Daily cleanup script (`scripts/cleanup.ts`) with `--dry-run` flag, user-driven lifecycle (3 ops: auto-dismiss matches > 7d unviewed, archive rejections > 90d, hard-delete unmatched jobs > 30d)
-- **Phase 2C.5:** GitHub Actions cron — daily 04:00 PT, manually verified green
-- **Phase 2C.6:** Per-job parsing refactor — scalable to 200+ companies without recurring schema bugs
-- **Phase 2D.0:** Schema additions for enrichment (`enrichedAt DateTime?`, `enrichmentVersion String?` on Job)
-- **Phase 2D.1:** LLM provider abstraction (`src/server/services/ai/llm.ts`) — typed error hierarchy (`LLMAuthError`, `LLMRateLimitError`, `LLMTransportError`, `LLMValidationError`), env-driven factory
-- **Phase 2D.2:** Groq provider (`groq-provider.ts`) — 3-attempt retry, exponential backoff, `Retry-After` header honor, `AbortController` timeout, Zod-validated JSON-mode output
-- **Phase 2D.3:** Enrichment orchestrator (`enrich.ts`) — idempotency predicate, per-job try/catch with typed-error split (auth/rate-limit abort; validation/transport continue), 4000-char description truncation, skill sanitization (lowercase + dedupe), atomic writeback
-- **Phase 2D.4 (partial):** CLI (`scripts/enrich.ts`) with `--force`/`--limit=N`/`--dry-run`. Wired into `daily-cron.yml`. First cron run timed out at 30min (workflow ceiling) with 67/1337 jobs enriched. Backfill continues autonomously via daily cron + idempotency. Workflow split + throttle pending.
+- **Phase 2C:** Greenhouse + Ashby scrapers, cleanup script, daily cron, per-job parse refactor — 1,337 real US jobs
+- **Phase 2D.0-2D.3:** LLM provider abstraction (`llm.ts`), Groq impl (`groq-provider.ts`), enrichment orchestrator (`enrich.ts`) — typed error hierarchy, idempotency predicate, 500ms throttle, atomic writeback
+- **Phase 2D.4:** CLI (`scripts/enrich.ts`), GitHub Actions split — `daily-cron.yml` (11:00 UTC, scrape+cleanup) + `daily-enrich.yml` (12:00 UTC, enrich only, 60min timeout)
+- **Phase 2E.1 (backend only — UI deferred to next session for cinematic work):**
+  - Schema expansion: UserPreference + 7 fields (visaType, workAuthStatus, salaryMin, currentEmployment, targetRoles, avoidCompanies, onboardingComplete); ResumeVersion + 7 fields (userId required, isMaster, parsedJson, parsedAt, parseVersion, fileName, fileSize); User gains `resumes` relation
+  - Zod validation (`src/shared/schemas/preferences.ts`): expanded schema with canonical enum value arrays (`visaTypeValues`, `workAuthStatusValues`, `currentEmploymentValues`) exported for UI use
+  - Server Action (`src/server/actions/preferences.ts`): updated to persist all new fields
+  - Resume parser (`src/server/services/ai/parse-resume.ts`): provider-agnostic, Zod-validated, integrity-preserving (bullets verbatim from master). Version: `groq-llama-3.3-70b-resume-v1`
+  - Upload Server Action (`src/server/actions/resume.ts`): 5MB cap, MIME whitelist, atomic master-switch via `prisma.$transaction` (preserves old masters as `isMaster: false` for tailored-resume provenance), pdf-parse v2 (`PDFParse` class)
+  - CLI smoke test (`scripts/parse-resume.ts`, `npm run parse:resume`)
+  - Verified end-to-end against real resume PDF: 38 skills extracted, 3 work history entries, 2 education entries, bullets verbatim, 2.4s wall time
 
-**Total in DB right now: 1,337 real US jobs across 17 active companies. 67 jobs enriched with `groq-llama-3.3-70b-v1`. Remaining ~1,270 will enrich over coming days via daily cron.**
+**Total in DB right now: 1,337 real US jobs across 17 active companies. ~123 jobs enriched (autonomous backfill continuing daily via cron).**
 
 ---
 
@@ -65,18 +68,29 @@ No emojis in production UI. We are precise, never cute.
 
 `id, authId, email (unique), name, role, createdAt, updatedAt`
 
-- relations: preferences, applications, jobMatches, blockedCompanies
+- relations: preferences, applications, jobMatches, blockedCompanies, resumes
 
 ### UserPreference
 
-`id, userId (unique), keywords[], excludeKeywords[], locations[], jobTypes[], experienceMin, experienceMax, visaSponsorship, stemOptOnly, dailyApplyLimit, createdAt, updatedAt`
+Core: `id, userId (unique), keywords[], excludeKeywords[], locations[], jobTypes[], experienceMin, experienceMax, visaSponsorship, stemOptOnly, dailyApplyLimit, createdAt, updatedAt`
+
+**2E.1 additions:**
+
+- `visaType` (String?) — "h1b" | "f1_opt" | "stem_opt" | "green_card" | "citizen" | "other"
+- `workAuthStatus` (String?) — "needs_sponsorship" | "current_h1b" | "ead" | "citizen_or_gc"
+- `salaryMin` (Int?) — minimum acceptable annual USD
+- `currentEmployment` (String?) — "employed" | "unemployed" | "student" | "freelance"
+- `targetRoles` (String[] default []) — specific job titles user wants (vs general keywords)
+- `avoidCompanies` (String[] default []) — soft block, distinct from UserBlockedCompany hard block
+- `onboardingComplete` (Boolean default false) — routing flag
+
+Canonical enum string arrays exported from `src/shared/schemas/preferences.ts`: `visaTypeValues`, `workAuthStatusValues`, `currentEmploymentValues`.
 
 ### Company ← used by scrapers
 
 `id, slug (unique), name, ats, active, knownToSponsor, notes, lastScrapedAt, lastJobCount, createdAt, updatedAt`
 
 - `ats`: "greenhouse" | "lever" | "ashby" | "workday"
-- `active`: boolean
 - **WATCH:** `ats` not `source`; `active` not `isActive`
 
 ### ScrapingRule ← used by scrapers
@@ -85,7 +99,6 @@ No emojis in production UI. We are precise, never cute.
 
 - `ruleType`: "exclude_keyword" | "require_location_match" | "max_age_days"
 - `appliesTo`: "description" | "title" | "location" | "any"
-- `enabled`: boolean
 - **WATCH:** `ruleType` not `action`; `appliesTo` not `field`; `enabled` not `isActive`
 
 ### Job ← inserted by scrapers, updated by enricher
@@ -93,8 +106,8 @@ No emojis in production UI. We are precise, never cute.
 `id, source, sourceUrl (UNIQUE), externalId, title, company, companySlug, location, remote, description (text), rawJson (json), hash, seniority, experienceYears, skills[], sponsorsVisa, stemOptFriendly, enrichedAt, enrichmentVersion, postedAt, scrapedAt, expiresAt, deletedAt, updatedAt`
 
 - **WATCH:** `company` is a STRING (not FK), `sourceUrl` not `url`, `externalId` not `sourceJobId`, `source` is the ATS name string
-- **AI-filled fields:** `seniority` (String?, canonical: entry/mid/senior/staff), `experienceYears` (Int? 0-40), `skills` (String[] default []), `sponsorsVisa` (Boolean? tri-state), `stemOptFriendly` (Boolean? tri-state)
-- **AI metadata:** `enrichedAt` (DateTime?), `enrichmentVersion` (String?, e.g. "groq-llama-3.3-70b-v1")
+- **AI-filled fields:** `seniority` (entry/mid/senior/staff), `experienceYears` (0-40), `skills` (lowercase), `sponsorsVisa` (tri-state), `stemOptFriendly` (tri-state)
+- **AI metadata:** `enrichedAt` (DateTime?), `enrichmentVersion` (e.g. "groq-llama-3.3-70b-v1")
 
 ### UserJobMatch
 
@@ -106,9 +119,19 @@ No emojis in production UI. We are precise, never cute.
 
 `id, userId, jobId, status, resumeId, appliedAt, notes, createdAt, updatedAt, archivedAt`
 
-### ResumeVersion
+### ResumeVersion (significantly expanded in 2E.1)
 
-`id, jobId (optional), contentJson, pdfUrl, docxUrl, createdAt`
+Core: `id, userId (REQUIRED), jobId (optional), contentJson, pdfUrl, docxUrl, createdAt, applications[]`
+
+**2E.1 additions:**
+
+- `user` relation (User cascade on delete)
+- `isMaster` (Boolean default false) — only one master per user at any time
+- `parsedJson` (Json?) — AI-extracted structured: { fullName, email, phone, location, summary, totalYearsExperience, currentRole, currentCompany, education[], workHistory[], skills[], links{} }
+- `parsedAt` (DateTime?), `parseVersion` (String?) — e.g. "groq-llama-3.3-70b-resume-v1" — idempotency
+- `fileName` (String?), `fileSize` (Int?) — upload metadata
+
+Indexes: `[userId]`, `[userId, isMaster]`
 
 ### UserBlockedCompany
 
@@ -124,28 +147,36 @@ No emojis in production UI. We are precise, never cute.
 
 ## 4. LOCKED DECISIONS (do not re-discuss)
 
-| Decision                  | Value                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------ |
-| Job TTL                   | 30 days for unmatched jobs (matched jobs live until application closes)              |
-| UserJobMatch auto-dismiss | 7 days unviewed → soft-dismiss (kept for analytics)                                  |
-| Application archival      | 90 days after rejection → soft-archive                                               |
-| Dedup window              | 14 days (sha256 of company\|title\|location)                                         |
-| Cleanup cron              | Daily 04:00 PT via GitHub Actions                                                    |
-| Cleanup model             | **User-driven, not time-driven**: jobs die when no user cares; kept while applied to |
-| Repository pattern        | NO — direct Prisma calls                                                             |
-| AI provider (beta)        | Groq free tier (`llama-3.3-70b-versatile`)                                           |
-| Groq free tier limits     | **30 RPM / 6,000 TPM / 1,000 RPD** for this model (NOT 14k/day — that was wrong)     |
-| Enrichment version        | `groq-llama-3.3-70b-v1` — bump string in `enrich.ts` to force re-enrich on prompt v2 |
-| Enrichment idempotency    | Skip jobs where `enrichedAt IS NOT NULL AND enrichmentVersion = current`             |
-| Enrichment temperature    | 0 (deterministic — extraction not generation)                                        |
-| Enrichment max_tokens     | 512 (calibrated against TPM budget)                                                  |
-| LLM error handling        | Auth/rate-limit → abort batch; validation/transport → log+continue                   |
-| Vercel deploy             | After Phase 2E (full dashboard)                                                      |
-| US-only filter            | Multi-office OK (any segment US → accept)                                            |
-| Rule patterns             | Regex (case-insensitive)                                                             |
-| Server-only guard         | Only on supabase-server.ts (not prisma/logger/posthog)                               |
-| Git workflow              | Direct commits to main acceptable for solo work                                      |
-| Schema strictness         | **Strict on fields we use; permissive on metadata.** Per-job parse + try/catch.      |
+| Decision                    | Value                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Job TTL                     | 30 days for unmatched jobs (matched jobs live until application closes)                                 |
+| UserJobMatch auto-dismiss   | 7 days unviewed → soft-dismiss (kept for analytics)                                                     |
+| Application archival        | 90 days after rejection → soft-archive                                                                  |
+| Dedup window                | 14 days (sha256 of company\|title\|location)                                                            |
+| Cleanup cron                | Daily 04:00 PT via GitHub Actions                                                                       |
+| Cleanup model               | **User-driven, not time-driven**: jobs die when no user cares; kept while applied to                    |
+| Repository pattern          | NO — direct Prisma calls                                                                                |
+| AI provider (beta)          | Groq free tier (`llama-3.3-70b-versatile`)                                                              |
+| Groq free tier limits       | **30 RPM / 6,000 TPM / 1,000 RPD** for this model                                                       |
+| Enrichment version          | `groq-llama-3.3-70b-v1` — bump string in `enrich.ts` to force re-enrich                                 |
+| Enrichment idempotency      | Skip jobs where `enrichedAt IS NOT NULL AND enrichmentVersion = current`                                |
+| Enrichment throttle         | 500ms between successful jobs                                                                           |
+| Enrichment temperature      | 0 (deterministic — extraction not generation)                                                           |
+| Enrichment max_tokens       | 512                                                                                                     |
+| Resume parse version        | `groq-llama-3.3-70b-resume-v1`                                                                          |
+| Resume parse max_tokens     | 4096                                                                                                    |
+| Resume parse truncation     | 12,000 chars                                                                                            |
+| LLM error handling          | Auth/rate-limit → abort batch; validation/transport → log+continue                                      |
+| LLM cron schedules          | scrape+cleanup 11:00 UTC, enrich 12:00 UTC (separate workflow files)                                    |
+| **Master / Tailored split** | **Master resume is locked truth. Tailoring rewrites summary/skills/bullets only, never invents facts.** |
+| Master switching            | Non-destructive: old master keeps `isMaster=false` (preserves provenance)                               |
+| Resume file types accepted  | PDF + plain text (DOCX deferred); 5 MB max                                                              |
+| Vercel deploy               | After Phase 2E (full dashboard)                                                                         |
+| US-only filter              | Multi-office OK (any segment US → accept)                                                               |
+| Rule patterns               | Regex (case-insensitive)                                                                                |
+| Server-only guard           | Only on supabase-server.ts (not prisma/logger/posthog)                                                  |
+| Git workflow                | Direct commits to main acceptable for solo work                                                         |
+| Schema strictness           | **Strict on fields we use; permissive on metadata.** Per-job parse + try/catch.                         |
 
 ---
 
@@ -153,38 +184,44 @@ No emojis in production UI. We are precise, never cute.
 
 ### Scrapers (`src/server/services/scrapers/`)
 
-| File                   | Purpose                                                | Reusable across scrapers? |
-| ---------------------- | ------------------------------------------------------ | ------------------------- |
-| `greenhouse.schema.ts` | Zod schema: `parseGreenhouseJobsArray` + per-job parse | No (provider-specific)    |
-| `greenhouse.ts`        | Greenhouse orchestrator (per-job try/catch)            | No (provider-specific)    |
-| `ashby.schema.ts`      | Zod schema: `parseAshbyJobsArray` + per-job parse      | No (provider-specific)    |
-| `ashby.ts`             | Ashby orchestrator (per-job try/catch)                 | No (provider-specific)    |
-| `location.ts`          | `isUSLocation()`, `hasUSLocation()`                    | ✅ YES — pure function    |
-| `hash.ts`              | `jobHash(slug, title, location)` SHA-256               | ✅ YES — pure function    |
-| `rules.ts`             | `applyRules()` owner-rule engine                       | ✅ YES — pure function    |
+| File                   | Purpose                             | Reusable?              |
+| ---------------------- | ----------------------------------- | ---------------------- |
+| `greenhouse.schema.ts` | Zod schema + per-job parse          | No (provider-specific) |
+| `greenhouse.ts`        | Orchestrator with per-job try/catch | No                     |
+| `ashby.schema.ts`      | Zod schema + per-job parse          | No                     |
+| `ashby.ts`             | Orchestrator                        | No                     |
+| `location.ts`          | `isUSLocation()`, `hasUSLocation()` | ✅ pure function       |
+| `hash.ts`              | `jobHash()` SHA-256                 | ✅ pure function       |
+| `rules.ts`             | `applyRules()` engine               | ✅ pure function       |
 
-**Per-job parse pattern (Phase 2C.6):** Fetch validates only `{ jobs: unknown[] }`. Each job is then parsed individually in a try/catch. Malformed jobs increment `skippedMalformed` and continue.
+### AI services (`src/server/services/ai/`)
 
-### AI enrichment (`src/server/services/ai/`)
+| File               | Purpose                                                                                 |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| `llm.ts`           | Provider-agnostic interface, typed error hierarchy, env-driven factory                  |
+| `groq-provider.ts` | Groq impl: retry + Retry-After + AbortController + Zod-validated JSON mode              |
+| `enrich.ts`        | Job enrichment orchestrator: idempotency, throttle, per-job try/catch, atomic writeback |
+| `parse-resume.ts`  | Resume parser: structured extraction with integrity rule (bullets verbatim)             |
 
-| File               | Purpose                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------- |
-| `llm.ts`           | Provider-agnostic interface, typed error hierarchy, env-driven factory                      |
-| `groq-provider.ts` | Groq impl: retry + backoff + Retry-After + AbortController + Zod-validated JSON mode        |
-| `enrich.ts`        | Orchestrator: idempotency predicate, per-job try/catch, typed-error split, atomic writeback |
+### Server Actions (`src/server/actions/`)
 
-**Swapping providers:** add a new file (e.g. `claude-provider.ts`), add a case in `getLLMProvider()` factory, set `LLM_PROVIDER` env var. The interface stays identical.
+| File             | Purpose                                                               |
+| ---------------- | --------------------------------------------------------------------- |
+| `auth.ts`        | signup/signin/signout                                                 |
+| `preferences.ts` | save UserPreference (now with 7 new fields)                           |
+| `resume.ts`      | uploadMasterResumeAction — file → text → parse → atomic master-switch |
 
 ### CLI scripts (`scripts/`)
 
-- `scrape.ts` — provider dispatcher (`scrape:gh`, `scrape:ashby`)
-- `cleanup.ts` — daily lifecycle ops (`cleanup`, `cleanup -- --dry-run`)
-- `enrich.ts` — AI enrichment (`enrich`, `enrich -- --force`, `--limit=N`, `--dry-run`)
+- `scrape.ts` — `scrape:gh`, `scrape:ashby`
+- `cleanup.ts` — `cleanup`, `cleanup -- --dry-run`
+- `enrich.ts` — `enrich`, `enrich -- --force --limit=N --dry-run`
+- `parse-resume.ts` — `parse:resume -- <path>` (CLI smoke test for parser)
 
-### GitHub Actions cron
+### GitHub Actions
 
-- `.github/workflows/daily-cron.yml` — runs at 04:00 PT (11:00 UTC). Steps: Checkout → Setup Node → Install → Prisma generate → Scrape Greenhouse → Scrape Ashby → **Enrich jobs** → Cleanup. All scrape/enrich/cleanup steps have `continue-on-error: true`.
-- **Known issue:** workflow's 30-min timeout kills enrich step mid-run on heavy backfill days. Pending fix: split into separate `daily-enrich.yml` workflow with longer timeout + add throttle.
+- `daily-cron.yml` — 11:00 UTC, 15-min timeout, scrape + cleanup
+- `daily-enrich.yml` — 12:00 UTC, 60-min timeout, enrich only
 
 Runbook: `docs/runbooks/cron.md`
 
@@ -192,50 +229,59 @@ Runbook: `docs/runbooks/cron.md`
 
 ## 6. WHAT REMAINS
 
-### Phase 2D follow-ups (next session, in order)
+### Phase 2E.2 — Matcher backend (next session)
 
-1. **Split enrich into its own workflow** — `.github/workflows/daily-enrich.yml`, runs an hour after `daily-cron.yml`, timeout 60 min
-2. **Add throttle to orchestrator** — `await sleep(500)` between successful enrichments to smooth TPM curve and avoid long `Retry-After` waits
-3. **Let backfill run** — at ~1,000 jobs/day, full backfill of 1,270 remaining jobs takes ~2 days autonomously
+- `src/server/services/matcher/` — algorithm computing `UserJobMatch.matchScore` per user × job
+- Scoring inputs: title keyword overlap, AI-field overlap (seniority, skills, experienceYears, sponsorsVisa), location match
+- Weighted scoring with `scoreBreakdown` stored as Json for "why this score" UX
+- "Why this job" reason generator: per-job LLM call producing the written paragraph
+- `npm run match` CLI + Server Action trigger on UserPreference save
+- Critical constraint: **non-technical jobs return `skills: []`**, so the matcher must not require skill overlap as a hard filter — score it as a bonus signal, not a gate
 
-### Phase 2E — Matcher + Dashboard
+### Phase 2E.3 — Showpiece dashboard (cinematic, next session(s))
 
-- Populate `UserJobMatch` per user (keyword + AI-extracted-field match)
-- Build `/dashboard` at Apple-grade bar
-- Filters: location, remote, sponsorship, experience, seniority, skills
-- Note: ~60% of jobs are non-technical roles (sales, ops, support) with `skills: []`. **Matcher must not require skill overlap as a hard filter** — score it as a bonus signal, not a gate.
-- Later: pgvector semantic match
+User's "blow their mind" target. Specific UX decisions to honor:
+
+- **Onboarding choreography:** resume upload → AI prefill confirmation → ~5 questions → "Building your daily briefing..." → curtain pulls back
+- **Daily briefing as the hero view** — 5-10 jobs with written rationale per job, not a 200-row filterable list
+- **Score reveal** — animated ring/number countdown (Framer Motion springs), subtle glow at >85
+- **Single dashboard story:** "we've already done the work for you," not "here are filters"
+- Settings page (visa, salary, locations, block list, notifications) is secondary
 
 ### Phase 2F — Deploy to Vercel
 
-### Phase 2G+ — Resume tailoring, PDF gen, Playwright auto-fill (review-only), Gmail intelligence
+### Phase 2G — Resume tailoring
+
+- `TailoredResume` model: `{ id, userId, jobId, masterResumeId, tailoredSummary, tailoredSkills[], roleAdaptations[], pdfUrl, docxUrl }`
+- Per-job tailoring: LLM rewrites summary + skills + bullets, locked sections (contact, education, dates, companies) taken verbatim from master
+- Generate **both PDF and DOCX**, both single-page, both ATS-friendly (sans-serif, single column, no images/headers/footers)
+- Generation library TBD (likely `react-pdf` or `puppeteer`)
+
+### Phase 2H+ — Email digest, application auto-fill (Playwright, review-only), Gmail intelligence
 
 ### Future scraper expansion
 
-- Lever scraper (~30 min, only Cohere in DB right now)
-- Workday scraper (large effort, hostile target)
-- Workable scraper (unlocks Hugging Face)
-- Rippling's own ATS (their own API)
+- Lever, Workday, Workable, Rippling's own ATS
 
 ---
 
 ## 7. KNOWN ISSUES (live, accepted)
 
-1. **Null bytes** — ~0.3% of Greenhouse jobs have `\u0000` in description. We strip from text fields, but a handful slip through nested JSON. Accepted.
-2. **Coinbase** — Greenhouse API returns 404 from GitHub Actions runners (likely IP filter). Shows up as 1 fetch_failed per cron run. Will resolve if Coinbase changes their filter, OR we proxy through a residential IP later.
-3. **Linear (ashby), Supabase (ashby)** — non-US / European-only. Filter correctly rejects all jobs. Expected behavior.
-4. **GitHub Actions Node.js 20 deprecation** — June 2026. Need to bump `actions/checkout@v4` and `actions/setup-node@v4` when GitHub releases newer versions.
-5. **Cron timeout mid-enrich** — `daily-cron.yml` has 30-min timeout; on backfill days the enrich step gets killed before completing. Architecture handles this correctly (idempotency → tomorrow's run resumes), but throughput is wasted. **Fix:** split enrich into own workflow + add 500ms throttle. Pending next session.
-6. **Non-technical roles return `skills: []`** — ~60% of scraped jobs (sales, ops, restaurant, support roles) have no technical skills to extract; model correctly returns `[]`. Matcher (Phase 2E) must not require skills as a hard filter.
+1. **Null bytes** — ~0.3% of Greenhouse jobs have `\u0000` in description. Mostly stripped, occasional ones slip through nested JSON. Accepted.
+2. **Coinbase** — Greenhouse API returns 404 from GitHub Actions runners (IP filter). 1 fetch_failed per cron.
+3. **Linear (ashby), Supabase (ashby)** — European-only. Filter correctly rejects. Expected.
+4. **GitHub Actions Node 20 deprecation** — June 2026. Bump `actions/checkout@v4` and `actions/setup-node@v4` when newer releases land.
+5. **Non-technical roles return `skills: []`** — ~60% of jobs (sales, ops, restaurant, support). Model correctly returns []. Matcher must not require skills as hard filter.
+6. **Enrichment hits TPM ceiling on heavy backfill** — Architecture handles it (typed `LLMRateLimitError` → abort, idempotency → resume next day). Mitigated by 500ms throttle. Daily output ~50-100 jobs per `daily-enrich.yml` run during backfill.
+7. **DOCX resume upload not implemented** — `extractText` throws clear error. Requires `mammoth` install + branch. Deferred.
 
 ### Recently resolved
 
-- ✅ Airbnb — was returning 0 fetched. Fixed by accepting `boolean` in `metadata.value`.
-- ✅ DoorDash — wrong slug + metadata.value as object. Fixed slug + per-job parsing.
-- ✅ Notion / Plaid / Rippling / Snowflake — moved to Ashby (correct ATS).
-- ✅ Per-company schema variations causing 0-fetched aborts — solved by per-job parse refactor.
-- ✅ **Phase 2D LLM provider abstraction, Groq impl, enrichment orchestrator** — shipped end-to-end with 0 validation/transport failures across first 67 jobs.
-- ✅ **CONTEXT.md "Groq free tier 14k req/day" line** — corrected. Actual limit for `llama-3.3-70b-versatile` is 1,000 RPD / 6,000 TPM / 30 RPM.
+- ✅ Phase 2D shipped end-to-end (LLM abstraction, Groq impl, enrichment orchestrator, CLI, cron wiring)
+- ✅ Cron timeout mid-enrich — split into separate workflow files with 60min timeout for enrich
+- ✅ "Groq 14k req/day" misconception in old CONTEXT.md — corrected to 1,000 RPD
+- ✅ Phase 2E.1 backend shipped (schema + Zod + Server Actions + parser + CLI)
+- ✅ Resume parser verified end-to-end against real PDF (38 skills, verbatim bullets, 2.4s)
 
 ---
 
@@ -256,15 +302,19 @@ Runbook: `docs/runbooks/cron.md`
 | SQL triggers       | `prisma/sql/0001_auth_signup_trigger.sql`                                                 |
 | Auth               | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts`      |
 | Preferences        | `src/server/actions/preferences.ts`, `src/app/onboarding/preferences/*`                   |
+| Resume upload      | `src/server/actions/resume.ts`                                                            |
+| Resume parser      | `src/server/services/ai/parse-resume.ts`                                                  |
+| Zod schemas        | `src/shared/schemas/preferences.ts`                                                       |
 | Command palette    | `src/components/command-palette.tsx`                                                      |
 | Greenhouse scraper | `src/server/services/scrapers/greenhouse*.ts`                                             |
 | Ashby scraper      | `src/server/services/scrapers/ashby*.ts`                                                  |
 | LLM provider       | `src/server/services/ai/llm.ts`, `groq-provider.ts`                                       |
-| AI enrichment      | `src/server/services/ai/enrich.ts`                                                        |
+| Job enrichment     | `src/server/services/ai/enrich.ts`                                                        |
 | Scrape CLI         | `scripts/scrape.ts`                                                                       |
 | Cleanup CLI        | `scripts/cleanup.ts`                                                                      |
 | Enrich CLI         | `scripts/enrich.ts`                                                                       |
-| GitHub Actions     | `.github/workflows/daily-cron.yml`                                                        |
+| Parse-resume CLI   | `scripts/parse-resume.ts`                                                                 |
+| GitHub Actions     | `.github/workflows/daily-cron.yml`, `daily-enrich.yml`                                    |
 
 ---
 
@@ -272,7 +322,7 @@ Runbook: `docs/runbooks/cron.md`
 
 Start a new session with:
 
-> "Read CONTEXT.md first. Confirm schema field names before any code. Ready for Phase 2D follow-ups (workflow split + throttle) or Phase 2E (matcher + dashboard)."
+> "Read CONTEXT.md first. Confirm schema field names before any code. Ready for Phase 2E.2 (matcher backend) or 2E.3 (cinematic dashboard)."
 
 Then paste this file. I will:
 
