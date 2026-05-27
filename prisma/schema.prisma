@@ -156,7 +156,11 @@ model UserJobMatch {
   jobId         String
   job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  matchScore    Float    @default(0)
+  matchScore      Float    @default(0)
+  scoreBreakdown  Json?
+  reason          String?  @db.Text
+  matchVersion    String?
+
   status        String   @default("fresh") // "fresh" | "viewed" | "applied" | "dismissed" | "rejected"
   matchedAt     DateTime @default(now())
   viewedAt      DateTime?
@@ -166,6 +170,7 @@ model UserJobMatch {
 
   @@unique([userId, jobId])
   @@index([userId, matchScore])
+  @@index([userId, matchVersion])
   @@index([dismissed])
   @@index([status])
   @@index([matchedAt])
