@@ -20,10 +20,11 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  preferences   UserPreference?
-  applications  Application[]
-  jobMatches    UserJobMatch[]
+  preferences      UserPreference?
+  applications     Application[]
+  jobMatches       UserJobMatch[]
   blockedCompanies UserBlockedCompany[]
+  resumes          ResumeVersion[]
 }
 
 model UserPreference {
@@ -37,12 +38,25 @@ model UserPreference {
   jobTypes         String[] @default([]) // ["full-time", "internship", "contract"]
 
   // Experience filter (years)
-  experienceMin    Int?     // Friend C: 0
-  experienceMax    Int?     // Friend C: 1
-  // Friend A: min=0, max=3 | Friend B: min=7, max=null
+  experienceMin    Int?
+  experienceMax    Int?
 
-  visaSponsorship  Boolean  @default(true) // beta: all friends need sponsorship
+  // Visa & work auth (2E.1)
+  visaSponsorship  Boolean  @default(true)
   stemOptOnly      Boolean  @default(false)
+  visaType         String?  // "h1b" | "f1_opt" | "stem_opt" | "green_card" | "citizen" | "other"
+  workAuthStatus   String?  // "needs_sponsorship" | "current_h1b" | "ead" | "citizen_or_gc"
+
+  // Compensation & employment (2E.1)
+  salaryMin         Int?    // minimum acceptable annual USD
+  currentEmployment String? // "employed" | "unemployed" | "student" | "freelance"
+
+  // Targeting (2E.1)
+  targetRoles      String[] @default([])  // specific titles user wants
+  avoidCompanies   String[] @default([])  // soft block (hard block in UserBlockedCompany)
+
+  // Onboarding
+  onboardingComplete Boolean @default(false)
 
   dailyApplyLimit  Int      @default(5)
 
@@ -106,20 +120,20 @@ model Job {
   rawJson         Json?
   hash            String?
 
-  // Inferred by AI engine (Phase 4)
+  // Inferred by AI engine (Phase 2D)
   seniority         String?  // "entry" | "mid" | "senior" | "staff"
   experienceYears   Int?     // best-effort extraction
   skills            String[] @default([])
   sponsorsVisa      Boolean? // null = unknown
   stemOptFriendly   Boolean?
   postedAt          DateTime?
-  enrichedAt          DateTime?
-  enrichmentVersion   String?
+  enrichedAt        DateTime?
+  enrichmentVersion String?
 
-  scrapedAt       DateTime @default(now())
-  expiresAt   DateTime?
-  deletedAt   DateTime?
-  updatedAt       DateTime @updatedAt
+  scrapedAt       DateTime  @default(now())
+  expiresAt       DateTime?
+  deletedAt       DateTime?
+  updatedAt       DateTime  @updatedAt
 
   applications    Application[]
   resumeVersions  ResumeVersion[]
@@ -187,13 +201,26 @@ model Application {
 
 model ResumeVersion {
   id           String        @id @default(cuid())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   jobId        String?
   job          Job?          @relation(fields: [jobId], references: [id])
-  contentJson  Json
+
+  isMaster     Boolean       @default(false)
+  contentJson  Json          // raw text/structured upload content
+  parsedJson   Json?         // AI-extracted: education, work history, skills, etc.
+  parsedAt     DateTime?
+  parseVersion String?       // e.g. "groq-llama-3.3-70b-resume-v1"
+  fileName     String?
+  fileSize     Int?
   pdfUrl       String?
   docxUrl      String?
+
   createdAt    DateTime      @default(now())
   applications Application[]
+
+  @@index([userId])
+  @@index([userId, isMaster])
 }
 
 // ============================================================
