@@ -9,11 +9,11 @@ import {
   LLMValidationError,
 } from "./llm";
 
-export const RESUME_PARSE_VERSION = "groq-llama-3.3-70b-resume-v1";
+export const RESUME_PARSE_VERSION = "groq-llama-3.3-70b-resume-v2";
 const RESUME_TRUNCATE_CHARS = 12_000;
 const MAX_WORK_HISTORY = 20;
 const MAX_EDUCATION = 10;
-const MAX_SKILLS = 50;
+const MAX_SKILLS = 80;
 const MAX_BULLETS_PER_ROLE = 10;
 
 export const ResumeParseSchema = z.object({

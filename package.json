@@ -21,7 +21,11 @@
     "cleanup": "dotenv -e .env.local -- tsx scripts/cleanup.ts",
     "enrich": "dotenv -e .env.local -- tsx scripts/enrich.ts",
     "enrich": "dotenv -e .env.local -- tsx scripts/enrich.ts",
-    "parse:resume": "dotenv -e .env.local -- tsx scripts/parse-resume.ts"
+    "parse:resume": "dotenv -e .env.local -- tsx scripts/parse-resume.ts",
+    "parse:resume": "dotenv -e .env.local -- tsx scripts/parse-resume.ts",
+    "match": "dotenv -e .env.local -- tsx scripts/match.ts",
+    "match": "dotenv -e .env.local -- tsx scripts/match.ts",
+    "seed:resume": "dotenv -e .env.local -- tsx scripts/seed-master-resume.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
