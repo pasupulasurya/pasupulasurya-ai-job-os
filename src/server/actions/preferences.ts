@@ -56,6 +56,13 @@ export async function savePreferencesAction(input: unknown): Promise<ActionResul
         experienceMax: parsed.data.experienceMax,
         visaSponsorship: parsed.data.visaSponsorship,
         stemOptOnly: parsed.data.stemOptOnly,
+        visaType: parsed.data.visaType,
+        workAuthStatus: parsed.data.workAuthStatus,
+        salaryMin: parsed.data.salaryMin,
+        currentEmployment: parsed.data.currentEmployment,
+        targetRoles: parsed.data.targetRoles,
+        avoidCompanies: parsed.data.avoidCompanies,
+        onboardingComplete: parsed.data.onboardingComplete,
       },
     });
 
@@ -64,6 +71,8 @@ export async function savePreferencesAction(input: unknown): Promise<ActionResul
         userId: appUser.id,
         keywords: parsed.data.keywords.length,
         locations: parsed.data.locations.length,
+        visaType: parsed.data.visaType,
+        onboardingComplete: parsed.data.onboardingComplete,
       },
       "preferences.save.completed",
     );
