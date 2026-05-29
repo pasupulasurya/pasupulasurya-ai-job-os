@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Eye, X, ExternalLink, CheckCircle2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Eye, X, ExternalLink, CheckCircle2, ChevronDown } from "lucide-react";
 import { ScoreRing } from "./score-ring";
+import { ScoreBreakdown } from "./score-breakdown";
+import { spring } from "@/styles/tokens";
 import {
   markMatchViewedAction,
   dismissMatchAction,
@@ -14,6 +17,7 @@ export type MatchCardProps = {
   score: number;
   status: string; // "fresh" | "viewed" | "applied" | "dismissed" | "rejected"
   reason: string | null;
+  scoreBreakdown: unknown;
   job: {
     title: string;
     company: string;
@@ -28,6 +32,7 @@ type LocalState = "visible" | "dismissed";
 export function MatchCard(props: MatchCardProps) {
   const [localState, setLocalState] = useState<LocalState>("visible");
   const [localStatus, setLocalStatus] = useState(props.status);
+  const [expanded, setExpanded] = useState(false);
   const [, startTransition] = useTransition();
 
   if (localState === "dismissed") return null;
@@ -81,8 +86,23 @@ export function MatchCard(props: MatchCardProps) {
 
       {props.reason && <p className="mb-5 text-sm leading-relaxed text-white/75">{props.reason}</p>}
 
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="breakdown"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={spring.smooth}
+            className="overflow-hidden"
+          >
+            <ScoreBreakdown data={props.scoreBreakdown} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <footer className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {localStatus === "viewed" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1 text-xs text-white/50">
               <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} /> Viewed
@@ -93,6 +113,19 @@ export function MatchCard(props: MatchCardProps) {
               <CheckCircle2 className="h-3 w-3" strokeWidth={1.5} /> Applied
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="inline-flex items-center gap-1 text-xs text-white/40 transition-colors hover:text-white/80"
+          >
+            {expanded ? "Hide details" : "Why this score?"}
+            <ChevronDown
+              size={12}
+              strokeWidth={1.5}
+              className={"transition-transform " + (expanded ? "rotate-180" : "")}
+            />
+          </button>
         </div>
         <div className="flex items-center gap-2">
           <button

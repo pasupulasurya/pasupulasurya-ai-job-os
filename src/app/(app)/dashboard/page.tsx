@@ -105,6 +105,7 @@ export default async function DashboardPage() {
                 score: m.matchScore,
                 status: m.status,
                 reason: m.reason,
+                scoreBreakdown: m.scoreBreakdown,
                 job: m.job,
               }))}
             />
