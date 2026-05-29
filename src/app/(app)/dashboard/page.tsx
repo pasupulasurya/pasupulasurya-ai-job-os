@@ -4,7 +4,7 @@ import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { EmptyState } from "./_components/empty-state";
-import { MatchCard } from "./_components/match-card";
+import { MatchList } from "./_components/match-list";
 
 export const dynamic = "force-dynamic";
 
@@ -99,16 +99,15 @@ export default async function DashboardPage() {
           <EmptyState />
         ) : (
           <div className="space-y-4">
-            {matches.map((m) => (
-              <MatchCard
-                key={m.id}
-                matchId={m.id}
-                score={m.matchScore}
-                status={m.status}
-                reason={m.reason}
-                job={m.job}
-              />
-            ))}
+            <MatchList
+              matches={matches.map((m) => ({
+                matchId: m.id,
+                score: m.matchScore,
+                status: m.status,
+                reason: m.reason,
+                job: m.job,
+              }))}
+            />
             <div className="pt-8 text-center">
               <Link
                 href="/settings"
