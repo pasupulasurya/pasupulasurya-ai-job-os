@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { Eye, X, ExternalLink, CheckCircle2 } from "lucide-react";
+import { ScoreRing } from "./score-ring";
 import {
   markMatchViewedAction,
   dismissMatchAction,
@@ -74,9 +75,7 @@ export function MatchCard(props: MatchCardProps) {
           </p>
         </div>
         <div className="shrink-0">
-          <div className="rounded-full border border-[#0A84FF]/30 bg-[#0A84FF]/10 px-3 py-1 text-sm font-medium text-[#0A84FF]">
-            {Math.round(props.score)}
-          </div>
+          <ScoreRing score={props.score} />
         </div>
       </header>
 
