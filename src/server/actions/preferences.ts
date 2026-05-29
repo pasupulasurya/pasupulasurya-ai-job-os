@@ -12,7 +12,10 @@ type ActionResult = { error: string } | { success: true };
  * Save the current user's preferences.
  * Reads auth user via Supabase, finds matching public.User, updates UserPreference.
  */
-export async function savePreferencesAction(input: unknown): Promise<ActionResult> {
+export async function savePreferencesAction(
+  input: unknown,
+  redirectTo: string | null = "/dashboard",
+): Promise<ActionResult> {
   const parsed = preferencesSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input" };
@@ -81,5 +84,6 @@ export async function savePreferencesAction(input: unknown): Promise<ActionResul
     return { error: "Something went wrong saving your preferences." };
   }
 
-  redirect("/dashboard");
+  if (redirectTo) redirect(redirectTo);
+  return { success: true };
 }
