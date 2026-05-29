@@ -329,6 +329,7 @@ Items still remaining after today:
 10. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic, doesn't affect production users without the extension. Could add `suppressHydrationWarning` to body tag in future.
 11. **Resume upload UI is placeholder** — settings page shows resume info read-only with disabled "Upload new" button. Real flow shipped with Phase 2E.3.B item 6 (/onboarding/resume route).
 12. **No mobile responsive** — desktop only currently. Phase 2E.3.B item 3.
+13. "Cron cleanup occasionally times out on cold-start connection. Self-healing on next run. Free-tier Supabase behavior, accepted."
 
 ### Recently resolved
 
