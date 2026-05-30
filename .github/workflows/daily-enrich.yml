@@ -2,8 +2,17 @@ name: Daily enrich
 
 # Runs every day at 12:00 UTC (= 05:00 PT / 08:00 ET)
 # 1 hour after daily-cron.yml so scrapes have finished.
+#
+# Three sequential steps:
+#   1. Enrich jobs    — Groq LLM extracts skills/seniority/sponsorship
+#   2. Run matcher    — score every enriched job against every user
+#   3. Generate reasons — LLM-written paragraph for new top-10 per user
+#
 # Long timeout because enrichment is rate-limited and may take 30+ min
 # during backfill. Idempotent — safe to time out and resume tomorrow.
+# Matcher + reasons only run if enrichment step succeeds (default
+# behavior). Reasons step is idempotent — skips matches that already
+# have a reason.
 on:
   schedule:
     - cron: "0 12 * * *"
@@ -11,7 +20,7 @@ on:
 
 jobs:
   enrich:
-    name: Enrich jobs
+    name: Enrich + match + reasons
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -40,3 +49,9 @@ jobs:
 
       - name: Enrich jobs
         run: npx tsx scripts/enrich.ts
+
+      - name: Run matcher for all users
+        run: npx tsx scripts/match.ts --all-users
+
+      - name: Generate reasons for all users
+        run: npx tsx scripts/reasons.ts --all-users
