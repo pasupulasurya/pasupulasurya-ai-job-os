@@ -38,8 +38,23 @@ export default async function SettingsPage() {
   }
 
   const masterResume = appUser.resumes[0] ?? null;
-  type ParsedResume = { totalYearsExperience?: number | null } | null;
+  type ParsedResume = {
+    totalYearsExperience?: number | null;
+    skills?: unknown;
+  } | null;
   const parsed = (masterResume?.parsedJson as ParsedResume) ?? null;
+
+  // Surface resume-extracted skills as suggested chips above the Keywords input.
+  // Defensive: parsedJson is Json? so we narrow at the boundary. Cap visible at 15.
+  const suggestedSkills: string[] = Array.isArray(parsed?.skills)
+    ? Array.from(
+        new Set(
+          (parsed.skills as unknown[])
+            .filter((s): s is string => typeof s === "string" && s.trim().length > 0)
+            .map((s) => s.trim()),
+        ),
+      ).slice(0, 15)
+    : [];
 
   const appliedCount = appUser.jobMatches.filter((m) => m.status === "applied").length;
   const viewedCount = appUser.jobMatches.filter((m) => m.status === "viewed").length;
@@ -139,6 +154,7 @@ export default async function SettingsPage() {
             Preferences
           </h2>
           <PreferencesForm
+            suggestedKeywords={suggestedSkills}
             initialValues={{
               keywords: appUser.preferences?.keywords ?? [],
               excludeKeywords: appUser.preferences?.excludeKeywords ?? [],

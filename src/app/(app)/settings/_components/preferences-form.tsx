@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { Plus } from "lucide-react";
 import { ChipInput } from "@/components/onboarding/chip-input";
 import { ExperienceRange } from "@/components/onboarding/experience-range";
 import { JobTypeSelect } from "@/components/onboarding/job-type-select";
@@ -65,7 +66,13 @@ export type PreferencesFormValues = {
   avoidCompanies: string[];
 };
 
-export function PreferencesForm({ initialValues }: { initialValues: PreferencesFormValues }) {
+export function PreferencesForm({
+  initialValues,
+  suggestedKeywords = [],
+}: {
+  initialValues: PreferencesFormValues;
+  suggestedKeywords?: string[];
+}) {
   const [keywords, setKeywords] = useState(initialValues.keywords);
   const [excludeKeywords, setExcludeKeywords] = useState(initialValues.excludeKeywords);
   const [targetRoles, setTargetRoles] = useState(initialValues.targetRoles);
@@ -137,6 +144,14 @@ export function PreferencesForm({ initialValues }: { initialValues: PreferencesF
         title="What roles are you looking for?"
         description="We'll match these against job titles and skills."
       >
+        <SuggestedChipsRow
+          suggestions={suggestedKeywords.filter(
+            (s) => !keywords.some((k) => k.toLowerCase() === s.toLowerCase()),
+          )}
+          onPick={(value) => {
+            if (!keywords.includes(value)) setKeywords([...keywords, value]);
+          }}
+        />
         <ChipInput
           label="Keywords"
           placeholder="e.g. machine learning, react"
@@ -314,6 +329,43 @@ export function PreferencesForm({ initialValues }: { initialValues: PreferencesF
         </button>
       </div>
     </form>
+  );
+}
+
+function SuggestedChipsRow({
+  suggestions,
+  onPick,
+}: {
+  suggestions: string[];
+  onPick: (value: string) => void;
+}) {
+  if (suggestions.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <p className="text-text-tertiary text-xs tracking-widest uppercase">
+        Suggested from your resume
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <AnimatePresence initial={false}>
+          {suggestions.map((s) => (
+            <motion.button
+              key={s}
+              type="button"
+              onClick={() => onPick(s)}
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.85 }}
+              transition={spring.snappy}
+              className="border-border text-text-secondary hover:border-accent hover:text-accent inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+            >
+              <Plus size={12} strokeWidth={2} />
+              {s}
+            </motion.button>
+          ))}
+        </AnimatePresence>
+      </div>
+    </div>
   );
 }
 
