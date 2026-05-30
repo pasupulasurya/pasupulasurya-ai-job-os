@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import { ChipInput } from "@/components/onboarding/chip-input";
 import { ExperienceRange } from "@/components/onboarding/experience-range";
@@ -94,9 +95,50 @@ export function PreferencesForm({
 
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState<PreferencesFormValues>(initialValues);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
-  const canSave = keywords.length > 0 && !isPending;
+  const arrayEqual = (a: readonly unknown[], b: readonly unknown[]) =>
+    a.length === b.length && a.every((v, i) => v === b[i]);
+
+  const dirtyFieldCount = useMemo(() => {
+    let count = 0;
+    if (!arrayEqual(keywords, savedSnapshot.keywords)) count++;
+    if (!arrayEqual(excludeKeywords, savedSnapshot.excludeKeywords)) count++;
+    if (!arrayEqual(targetRoles, savedSnapshot.targetRoles)) count++;
+    if (!arrayEqual(locations, savedSnapshot.locations)) count++;
+    if (!arrayEqual(jobTypes, savedSnapshot.jobTypes)) count++;
+    if (experienceMin !== savedSnapshot.experienceMin) count++;
+    if (experienceMax !== savedSnapshot.experienceMax) count++;
+    if (visaSponsorship !== savedSnapshot.visaSponsorship) count++;
+    if (stemOptOnly !== savedSnapshot.stemOptOnly) count++;
+    if (visaType !== savedSnapshot.visaType) count++;
+    if (workAuthStatus !== savedSnapshot.workAuthStatus) count++;
+    if (salaryMin !== savedSnapshot.salaryMin) count++;
+    if (currentEmployment !== savedSnapshot.currentEmployment) count++;
+    if (!arrayEqual(avoidCompanies, savedSnapshot.avoidCompanies)) count++;
+    return count;
+     
+  }, [
+    keywords,
+    excludeKeywords,
+    targetRoles,
+    locations,
+    jobTypes,
+    experienceMin,
+    experienceMax,
+    visaSponsorship,
+    stemOptOnly,
+    visaType,
+    workAuthStatus,
+    salaryMin,
+    currentEmployment,
+    avoidCompanies,
+    savedSnapshot,
+  ]);
+
+  const canSave = keywords.length >= 3 && !isPending;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,6 +175,23 @@ export function PreferencesForm({
         setError(result.error);
       } else {
         setSavedAt(Date.now());
+        setSavedSnapshot({
+          keywords,
+          excludeKeywords,
+          targetRoles,
+          locations,
+          jobTypes,
+          experienceMin,
+          experienceMax,
+          visaSponsorship,
+          stemOptOnly,
+          visaType,
+          workAuthStatus,
+          salaryMin,
+          currentEmployment,
+          avoidCompanies,
+        });
+        router.refresh();
       }
     });
   }
@@ -314,8 +373,12 @@ export function PreferencesForm({
               animate={{ opacity: 1 }}
               className="text-text-tertiary text-xs"
             >
-              {keywords.length === 0
-                ? "Add at least one keyword to save."
+              {keywords.length < 3
+                ? "Add at least " +
+                  (3 - keywords.length) +
+                  " more keyword" +
+                  (3 - keywords.length === 1 ? "" : "s") +
+                  " to save."
                 : "All set when you're ready."}
             </motion.p>
           )}
@@ -325,7 +388,11 @@ export function PreferencesForm({
           disabled={!canSave}
           className="bg-accent text-accent-foreground hover:bg-accent-hover rounded-md px-6 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {isPending ? "Saving…" : "Save changes"}
+          {isPending
+            ? "Saving…"
+            : dirtyFieldCount > 0
+              ? `Save changes (${dirtyFieldCount})`
+              : "Save changes"}
         </button>
       </div>
     </form>

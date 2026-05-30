@@ -28,7 +28,7 @@ export const currentEmploymentValues = ["employed", "unemployed", "student", "fr
 export const preferencesSchema = z.object({
   keywords: z
     .array(z.string().min(1).max(60))
-    .min(1, "Add at least one keyword you want jobs to match")
+    .min(3, "Add at least 3 keywords for good matches — too few means too many irrelevant jobs")
     .max(20, "20 keywords is plenty — try to be specific"),
   excludeKeywords: z.array(z.string().min(1).max(60)).max(20).default([]),
   locations: z.array(z.string().min(1).max(60)).max(15).default([]),
