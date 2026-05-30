@@ -83,6 +83,7 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
   const jobs = await prisma.job.findMany({
     where: {
       deletedAt: null,
+      enrichmentVersion: { not: null },
       OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
     },
     orderBy: { scrapedAt: "desc" },
