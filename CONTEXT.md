@@ -285,25 +285,47 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 
 ## 6. WHAT REMAINS
 
-### Phase 2E.3.B continued (cinematic polish, multi-session, ~12-15h)
+### Phase 2E.3.B continued (cinematic polish, multi-session, ~9-12h)
 
-Items still remaining after today (wave 1 + wave 2 shipped):
+Items still remaining (mobile responsive shipped Monday):
 
-1. **Mobile responsive** — nav rail collapses to hamburger, every state needs mobile sizing (~6h)
-2. **Full accessibility pass** — ARIA, keyboard nav, focus management (~3h)
-3. **Keyboard shortcuts in dashboard** — save/dismiss/next via keyboard, leverages command palette (~2h)
-4. **Proper /onboarding/resume route** with drag-drop + AI-prefill confirmation (~3h)
-5. **Choreographed multi-step onboarding** — 5-step flow with Framer Motion (~6h)
-6. **Loading skeletons + error boundaries** at polish level (~2h)
-7. **Suggested target roles from resume's currentRole** — same UX as suggested keywords but targets the targetRoles field (~1h)
-8. **AI-suggested keywords on the onboarding form** — surface the same UX in `/onboarding/preferences` (~1h)
-9. **AI-suggested locations from resume.location** — separate ship (~1h)
+1. **Full accessibility pass** — ARIA, keyboard nav, focus management (~3h)
+2. **Keyboard shortcuts in dashboard** — save/dismiss/next via keyboard (~2h)
+3. **Proper /onboarding/resume route** with drag-drop + AI-prefill confirmation (~3h)
+4. **Loading skeletons + error boundaries** at polish level (~2h)
+5. **Suggested target roles from resume's currentRole** — same UX as suggested keywords (~1h)
+6. **AI-suggested keywords on the onboarding form** — surface the same UX in `/onboarding/preferences` (~1h)
+7. **AI-suggested locations from resume.location** — separate ship (~1h)
 
-### Phase 2E.4 — Wire matcher into daily cron (~2h)
+Note: "Choreographed multi-step onboarding" promoted to dedicated Phase 2E.5 below.
 
-- Currently matcher runs on-demand only (dashboard empty state or CLI)
-- Extend `daily-enrich.yml` or add third workflow
-- Cron should also trigger `generateReasonsForUser` after the matcher
+### Phase 2E.4 — ✅ SHIPPED (Monday)
+
+Daily cron now runs enrich → match → reasons sequentially via `daily-enrich.yml`. Both `match.ts --all-users` and `reasons.ts --all-users` are wired in. Product is self-sustaining — new matches appear daily without manual intervention.
+
+### Phase 2E.5 — Proper first-time onboarding flow (~15-25h, multi-session)
+
+Currently the "onboarding" is an incoherent two-step: `/onboarding/resume` upload → `/onboarding/preferences` form → dashboard. No personal info, no narrative, no progress indicator. The user has no sense of "I'm being onboarded."
+
+Real scope:
+
+- **Schema migration**: User table needs firstName, lastName, phone (E.164), possibly address fields. Currently only `name` (single field) and email.
+- **New onboarding routes** with proper flow: `/onboarding/welcome` → `/onboarding/profile` (name + phone) → `/onboarding/resume` (upload + parse) → `/onboarding/preferences` (the existing form, enriched with suggested chips) → `/dashboard`
+- **Progress indicator UI** — "Step 2 of 4" so users know where they are
+- **Phone validation** — country code picker (we target international workers — non-US phones common), E.164 format, possibly SMS verification later
+- **Routing logic** — dashboard checks ALL onboarding steps complete, not just resume
+- **Skip/back navigation** between steps
+- **Mobile responsive** for all of it (use the patterns already shipped Monday)
+- **Server actions** for each step's save
+- **Edit-after-onboarding** — settings page needs new "Personal info" section
+- **Validation** — what's required vs optional at each step
+
+Why this matters:
+
+1. Future Phase 2H features (email digest, SMS notifications, application auto-fill) need this data. Capturing upfront once is cheaper than scraping piecemeal later.
+2. First-time UX is currently a dead-end maze. Real onboarding is a narrative.
+
+Not a "quick add" — this is a dedicated multi-session phase. Surfaced Monday after user asked "we should take basic info before resume upload."
 
 ### Phase 2F — Vercel deploy (~3-4h)
 
@@ -332,13 +354,12 @@ Items still remaining after today (wave 1 + wave 2 shipped):
 4. **GitHub Actions Node 20 deprecation** — June 2026, bump actions/checkout + actions/setup-node.
 5. **Non-technical roles return `skills: []`** — ~60% of jobs. Matcher conditional relevance gate handles correctly.
 6. **DOCX resume upload** — not implemented, clear error returned.
-7. **Matcher not yet wired to daily cron** — runs only via dashboard empty-state action or CLI. Phase 2E.4 fixes this.
-8. **Dashboard greeting uses email prefix when User.name is null** — acceptable for v1.
-9. **Enrichment log misleading** — `log.model` shows provider default (70b) while API actually receives override (8b-instant). Cosmetic only.
-10. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic.
-11. **Resume upload UI is placeholder** — settings page shows resume info read-only with disabled "Upload new" button.
-12. **No mobile responsive** — desktop only currently.
-13. **Cron cleanup occasionally times out on cold-start connection.** Self-healing on next run. Free-tier Supabase behavior, accepted.
+7. **Dashboard greeting uses email prefix when User.name is null** — acceptable for v1.
+8. **Enrichment log misleading** — `log.model` shows provider default (70b) while API actually receives override (8b-instant). Cosmetic only.
+9. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic.
+10. **Resume upload UI is placeholder** — settings page shows resume info read-only with disabled "Upload new" button.
+11. **Cron cleanup occasionally times out on cold-start connection.** Self-healing on next run. Free-tier Supabase behavior, accepted.
+12. **LLM enrichment quality during v3 backfill** — v2 hallucinated tech skills on non-technical roles got bumped to v3 with tightened prompt (Monday). Re-enrichment runs ~120/day via cron, ~4 days for full backfill. Old v2 hallucinated matches will linger on dashboard until each job's v3 re-enrichment lands.
 
 ### Recently resolved
 
@@ -350,6 +371,10 @@ Items still remaining after today (wave 1 + wave 2 shipped):
 - ✅ Phase 2E.3.A shipped (functional dashboard)
 - ✅ Phase 2E.3.B wave 1 (score reveal + autocomplete + settings hub + AppShell + route migration)
 - ✅ Phase 2E.3.B wave 2 (stagger-in + why-this-score expandable + AI-suggested keywords)
+- ✅ Phase 2E.4 shipped Monday (cron wires matcher + reasons after enrichment)
+- ✅ Prefs overwrite prevention shipped Monday (schema min(3) keywords + form dirty-field counter)
+- ✅ Enrichment v3 shipped Monday (tightened prompt, stops LLM hallucinating skills on non-technical roles)
+- ✅ Phase 2E.3.B mobile responsive shipped Monday (AppShell hamburger + dashboard + settings)
 
 ---
 
