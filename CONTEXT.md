@@ -285,17 +285,15 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 
 ## 6. WHAT REMAINS
 
-### Phase 2E.3.B continued (cinematic polish, multi-session, ~9-12h)
+### Phase 2E.3.B continued (cinematic polish, multi-session, ~8-10h)
 
-Items still remaining (mobile responsive shipped Monday):
+Items still remaining (mobile responsive + AI-suggested onboarding + drag-drop resume route all shipped Monday):
 
 1. **Full accessibility pass** — ARIA, keyboard nav, focus management (~3h)
 2. **Keyboard shortcuts in dashboard** — save/dismiss/next via keyboard (~2h)
-3. **Proper /onboarding/resume route** with drag-drop + AI-prefill confirmation (~3h)
-4. **Loading skeletons + error boundaries** at polish level (~2h)
-5. **Suggested target roles from resume's currentRole** — same UX as suggested keywords (~1h)
-6. **AI-suggested keywords on the onboarding form** — surface the same UX in `/onboarding/preferences` (~1h)
-7. **AI-suggested locations from resume.location** — separate ship (~1h)
+3. **Loading skeletons + error boundaries** at polish level (~2h)
+4. **Suggested target roles from resume's currentRole** — same UX as suggested keywords (~1h)
+5. **AI-suggested locations from resume.location** — separate ship (~1h)
 
 Note: "Choreographed multi-step onboarding" promoted to dedicated Phase 2E.5 below.
 
@@ -303,29 +301,28 @@ Note: "Choreographed multi-step onboarding" promoted to dedicated Phase 2E.5 bel
 
 Daily cron now runs enrich → match → reasons sequentially via `daily-enrich.yml`. Both `match.ts --all-users` and `reasons.ts --all-users` are wired in. Product is self-sustaining — new matches appear daily without manual intervention.
 
-### Phase 2E.5 — Proper first-time onboarding flow (~15-25h, multi-session)
+### Phase 2E.5 — First-time onboarding flow (PARTIAL SHIP Monday, ~6-10h remaining)
 
-Currently the "onboarding" is an incoherent two-step: `/onboarding/resume` upload → `/onboarding/preferences` form → dashboard. No personal info, no narrative, no progress indicator. The user has no sense of "I'm being onboarded."
+Shipped Monday in one session: schema migration + 3 new routes + real end-to-end resume upload pipeline. New user flow now works: `/onboarding/welcome` → `/onboarding/profile` (firstName + lastName + phone) → `/onboarding/resume` (drag-drop PDF, unpdf extract, Groq 70b parse) → `/onboarding/preferences` (AI-suggested chips from parsed resume) → `/dashboard`.
 
-Real scope:
+Already shipped:
 
-- **Schema migration**: User table needs firstName, lastName, phone (E.164), possibly address fields. Currently only `name` (single field) and email.
-- **New onboarding routes** with proper flow: `/onboarding/welcome` → `/onboarding/profile` (name + phone) → `/onboarding/resume` (upload + parse) → `/onboarding/preferences` (the existing form, enriched with suggested chips) → `/dashboard`
-- **Progress indicator UI** — "Step 2 of 4" so users know where they are
-- **Phone validation** — country code picker (we target international workers — non-US phones common), E.164 format, possibly SMS verification later
-- **Routing logic** — dashboard checks ALL onboarding steps complete, not just resume
-- **Skip/back navigation** between steps
-- **Mobile responsive** for all of it (use the patterns already shipped Monday)
-- **Server actions** for each step's save
-- **Edit-after-onboarding** — settings page needs new "Personal info" section
-- **Validation** — what's required vs optional at each step
+- ✅ Schema split: User.name → firstName + lastName + phone (E.164). Backfilled existing row. `prisma db push` workflow.
+- ✅ `/onboarding/welcome` — 3-step preview, "Get started" CTA, redirects fully-onboarded users to /dashboard
+- ✅ `/onboarding/profile` — server+client split, prefill from existing user, Y-lenient phone normalization (accepts any common format, normalizes to E.164, US +1 default if no country code), Zod validation
+- ✅ `/onboarding/resume` — native HTML5 drag-and-drop (no react-dropzone), 5-state state machine (idle/uploading/success/error), drag-counter avoids onDragLeave flicker, calls existing uploadMasterResumeAction
+- ✅ PDF parser swap: pdf-parse v2 had a Next.js worker module bug. Replaced with `unpdf` (serverless-friendly, no worker). Updated 3 files: resume.ts action, parse-resume.ts CLI, seed-master-resume.ts CLI.
+- ✅ `saveProfileAction` Server Action + `profileSchema` Zod schema with phone normalization
 
-Why this matters:
+Remaining (~6-10h, dedicated next session):
 
-1. Future Phase 2H features (email digest, SMS notifications, application auto-fill) need this data. Capturing upfront once is cheaper than scraping piecemeal later.
-2. First-time UX is currently a dead-end maze. Real onboarding is a narrative.
-
-Not a "quick add" — this is a dedicated multi-session phase. Surfaced Monday after user asked "we should take basic info before resume upload."
+- **Progress indicator UI** — "Step 2 of 4" header across onboarding routes (~1h)
+- **Country picker for phone** — currently defaults to +1 if no country code, but international workers need a proper picker (~2h)
+- **Tighten firstName/lastName to non-null** — once new users always go through profile step (~30min migration)
+- **Edit personal info section in /settings** — so users can update name/phone after onboarding (~1.5h)
+- **DOCX upload support** — currently PDF only, known issue #6 (~2h)
+- **Parser prompt tightening** — current parser extracts noise like 'coursera' (cert provider) and 'chrodadb' (misread of 'ChromaDB'). Real quality issue worth fixing. (~1.5h)
+- **Routing guard hardening** — what if user uploads, leaves at preferences step, comes back later? (~1h)
 
 ### Phase 2F — Vercel deploy (~3-4h)
 
@@ -353,13 +350,15 @@ Not a "quick add" — this is a dedicated multi-session phase. Surfaced Monday a
 3. **Linear/Supabase (ashby)** — non-US, correctly rejected.
 4. **GitHub Actions Node 20 deprecation** — June 2026, bump actions/checkout + actions/setup-node.
 5. **Non-technical roles return `skills: []`** — ~60% of jobs. Matcher conditional relevance gate handles correctly.
-6. **DOCX resume upload** — not implemented, clear error returned.
-7. **Dashboard greeting uses email prefix when User.name is null** — acceptable for v1.
+6. **DOCX resume upload** — not implemented, clear error returned. Phase 2E.5 continued work.
+7. **Dashboard greeting falls back to email prefix when User.firstName is null** — acceptable until firstName tightened to non-null in Phase 2E.5 continued.
 8. **Enrichment log misleading** — `log.model` shows provider default (70b) while API actually receives override (8b-instant). Cosmetic only.
 9. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic.
-10. **Resume upload UI is placeholder** — settings page shows resume info read-only with disabled "Upload new" button.
-11. **Cron cleanup occasionally times out on cold-start connection.** Self-healing on next run. Free-tier Supabase behavior, accepted.
-12. **LLM enrichment quality during v3 backfill** — v2 hallucinated tech skills on non-technical roles got bumped to v3 with tightened prompt (Monday). Re-enrichment runs ~120/day via cron, ~4 days for full backfill. Old v2 hallucinated matches will linger on dashboard until each job's v3 re-enrichment lands.
+10. **Settings page resume card is read-only** — drag-drop upload exists at /onboarding/resume but not yet wired into /settings as a "replace resume" surface. Phase 2E.5 continued work.
+11. **Resume parser extracts noise** — pulls cert providers ('coursera') and misreads ('chrodadb' for 'ChromaDB') as skills. Parser prompt tightening is Phase 2E.5 continued work.
+12. **pdf-parse v2 incompatible with Next.js bundled runtime** — fake worker .mjs module not found at runtime. Resolved Monday by switching to unpdf (serverless-friendly). Documented for future reference if anyone considers swapping back.
+13. **Cron cleanup occasionally times out on cold-start connection.** Self-healing on next run. Free-tier Supabase behavior, accepted.
+14. **LLM enrichment quality during v3 backfill** — v2 hallucinated tech skills on non-technical roles got bumped to v3 with tightened prompt (Monday). Re-enrichment runs ~120/day via cron, ~4 days for full backfill. Old v2 hallucinated matches will linger on dashboard until each job's v3 re-enrichment lands.
 
 ### Recently resolved
 
