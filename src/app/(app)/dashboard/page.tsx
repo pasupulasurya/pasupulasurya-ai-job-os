@@ -83,11 +83,13 @@ export default async function DashboardPage() {
   });
 
   return (
-    <main className="min-h-screen bg-black px-6 py-12 text-white">
+    <main className="min-h-screen bg-black px-4 py-8 text-white md:px-6 md:py-12">
       <div className="mx-auto max-w-3xl">
-        <header className="mb-10">
+        <header className="mb-6 md:mb-10">
           <p className="mb-1 text-xs tracking-widest text-white/40 uppercase">{today}</p>
-          <h1 className="text-3xl font-medium tracking-tight">Good to see you, {firstName}.</h1>
+          <h1 className="text-2xl font-medium tracking-tight md:text-3xl">
+            Good to see you, {firstName}.
+          </h1>
           {matches.length > 0 && (
             <p className="mt-2 text-sm text-white/60">
               {matches.length} {matches.length === 1 ? "match" : "matches"} ready for you today.

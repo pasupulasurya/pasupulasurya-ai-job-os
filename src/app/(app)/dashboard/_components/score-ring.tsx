@@ -6,15 +6,15 @@ import { motion } from "framer-motion";
 
 type ScoreRingProps = {
   score: number; // 0..100
+  size?: number; // default 48; mobile uses 40
 };
 
-const SIZE = 48;
-const STROKE = 2.5;
-const RADIUS = (SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
-
-export function ScoreRing({ score }: ScoreRingProps) {
+export function ScoreRing({ score, size = 48 }: ScoreRingProps) {
   const clamped = Math.max(0, Math.min(100, score));
+  const SIZE = size;
+  const STROKE = 2.5;
+  const RADIUS = (SIZE - STROKE) / 2;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
   const reducedMotion = useReducedMotion();
 
   // Motion value driving both the number and the ring fill.

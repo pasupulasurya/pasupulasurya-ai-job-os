@@ -70,17 +70,24 @@ export function MatchCard(props: MatchCardProps) {
     : (props.job.location ?? "");
 
   return (
-    <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition-colors hover:bg-white/[0.05]">
-      <header className="mb-4 flex items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-medium text-white">{props.job.title}</h2>
-          <p className="mt-1 text-sm text-white/60">
-            {props.job.company}
-            {locationStr && <span className="text-white/40"> · {locationStr}</span>}
-          </p>
+    <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 transition-colors hover:bg-white/[0.05] md:p-6">
+      <header className="mb-4">
+        {/* Mobile: 40px ring on its own row, right-aligned */}
+        <div className="mb-2 flex justify-end md:hidden">
+          <ScoreRing score={props.score} size={40} />
         </div>
-        <div className="shrink-0">
-          <ScoreRing score={props.score} />
+        {/* Title + desktop ring row */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-medium text-white">{props.job.title}</h2>
+            <p className="mt-1 text-sm text-white/60">
+              {props.job.company}
+              {locationStr && <span className="text-white/40"> · {locationStr}</span>}
+            </p>
+          </div>
+          <div className="hidden shrink-0 md:block">
+            <ScoreRing score={props.score} />
+          </div>
         </div>
       </header>
 
@@ -101,7 +108,7 @@ export function MatchCard(props: MatchCardProps) {
         )}
       </AnimatePresence>
 
-      <footer className="flex items-center justify-between">
+      <footer className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-0">
         <div className="flex items-center gap-3">
           {localStatus === "viewed" && (
             <span className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-1 text-xs text-white/50">
@@ -145,7 +152,7 @@ export function MatchCard(props: MatchCardProps) {
           </button>
           <button
             onClick={handleApply}
-            className="inline-flex items-center gap-2 rounded-lg bg-[#0A84FF] px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-[#0A84FF]/90"
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#0A84FF] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0A84FF]/90 md:flex-none md:py-1.5"
           >
             Apply <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
           </button>

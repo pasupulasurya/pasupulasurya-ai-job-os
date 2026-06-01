@@ -119,7 +119,6 @@ export function PreferencesForm({
     if (currentEmployment !== savedSnapshot.currentEmployment) count++;
     if (!arrayEqual(avoidCompanies, savedSnapshot.avoidCompanies)) count++;
     return count;
-     
   }, [
     keywords,
     excludeKeywords,
@@ -340,7 +339,7 @@ export function PreferencesForm({
       </FormSection>
 
       {/* Submit row */}
-      <div className="border-border flex items-center justify-between border-t pt-6">
+      <div className="border-border flex flex-col gap-4 border-t pt-6 md:flex-row md:items-center md:justify-between md:gap-0">
         <AnimatePresence mode="wait">
           {error && (
             <motion.p
@@ -386,7 +385,7 @@ export function PreferencesForm({
         <button
           type="submit"
           disabled={!canSave}
-          className="bg-accent text-accent-foreground hover:bg-accent-hover rounded-md px-6 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+          className="bg-accent text-accent-foreground hover:bg-accent-hover w-full rounded-md px-6 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 md:w-auto md:py-2.5"
         >
           {isPending
             ? "Saving…"

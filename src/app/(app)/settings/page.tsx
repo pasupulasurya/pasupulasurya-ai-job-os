@@ -63,13 +63,13 @@ export default async function SettingsPage() {
   const memberSince = formatDate(appUser.createdAt);
 
   return (
-    <main className="bg-background min-h-screen px-6 py-12 text-white">
-      <div className="mx-auto max-w-2xl space-y-10">
+    <main className="bg-background min-h-screen px-4 py-8 text-white md:px-6 md:py-12">
+      <div className="mx-auto max-w-2xl space-y-8 md:space-y-10">
         {/* Profile header */}
         <section className="flex items-start justify-between">
           <div>
             <p className="text-text-tertiary mb-1 text-xs tracking-widest uppercase">Account</p>
-            <h1 className="text-3xl font-medium tracking-tight">{displayName}</h1>
+            <h1 className="text-2xl font-medium tracking-tight md:text-3xl">{displayName}</h1>
             <p className="text-text-secondary mt-1 text-sm">{authUser.email}</p>
             <p className="text-text-tertiary mt-2 text-xs">Member since {memberSince}</p>
           </div>
