@@ -10,7 +10,7 @@ import {
   LLMValidationError,
 } from "./llm";
 
-export const ENRICHMENT_VERSION = "groq-llama-3.1-8b-v2";
+export const ENRICHMENT_VERSION = "groq-llama-3.1-8b-v3";
 const ENRICHMENT_MODEL = "llama-3.1-8b-instant";
 const DESCRIPTION_TRUNCATE_CHARS = 2000;
 const MAX_SKILLS = 20;
@@ -26,8 +26,15 @@ export const EnrichmentSchema = z.object({
 });
 export type Enrichment = z.infer<typeof EnrichmentSchema>;
 
-const SYSTEM_PROMPT =
-  "You extract structured data from US job postings. Return ONLY a JSON object with the exact shape requested. Use null when a field cannot be confidently determined. Never invent details not present in the posting.";
+const SYSTEM_PROMPT = [
+  "You extract structured data from US job postings. Return ONLY a JSON object with the exact shape requested. Use null when a field cannot be confidently determined.",
+  "",
+  "Critical anti-hallucination rules:",
+  "- Never include a skill that is not explicitly named in the posting text.",
+  "- Do not infer skills from company name, industry, or general 'tech company' context. A job at OpenAI is not automatically a Python job; a job at DoorDash is not automatically a JavaScript job.",
+  "- If the role is non-technical (sales, account management, executive assistant, customer success, partnerships, marketing, recruiter, operations), the skills array must be empty UNLESS the posting explicitly requires technical work.",
+  "- When uncertain, prefer empty arrays and null values over guessing.",
+].join("\n");
 
 function buildUserPrompt(title: string, description: string): string {
   const trimmed =
@@ -50,7 +57,7 @@ function buildUserPrompt(title: string, description: string): string {
     `Rules:`,
     `- seniority: "entry" = junior/new grad, "mid" = 2-5y, "senior" = 5-8y, "staff" = 8y+/principal/staff.`,
     `- experienceYears: lower bound if range. null if unspecified.`,
-    `- skills: technical only (languages, frameworks, tools). Lowercase. No soft skills.`,
+    `- skills: technical skills explicitly named in the posting text (languages, frameworks, tools, platforms). Lowercase. No soft skills. No skills inferred from company name or job category. If the role is non-technical (sales, executive assistant, account executive, customer success, recruiter, marketing, partnerships, operations, strategy), return []. Only include a skill if you can quote the literal word from the posting.`,
     `- sponsorsVisa: true if posting explicitly offers sponsorship. false if explicitly excludes (citizens-only, clearance). null if silent.`,
     `- stemOptFriendly: true if explicitly STEM/OPT-friendly. false if explicitly excludes. null if silent.`,
   ].join("\n");
