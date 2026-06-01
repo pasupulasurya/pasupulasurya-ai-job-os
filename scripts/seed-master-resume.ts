@@ -45,14 +45,9 @@ async function main() {
   if (ext === ".txt") {
     rawText = buffer.toString("utf8");
   } else if (ext === ".pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
-    try {
-      const result = await parser.getText();
-      rawText = result.text;
-    } finally {
-      await parser.destroy();
-    }
+    const { extractText: unpdfExtract } = await import("unpdf");
+    const { text } = await unpdfExtract(new Uint8Array(buffer), { mergePages: true });
+    rawText = text;
   } else {
     console.error(`Unsupported extension: ${ext}`);
     process.exit(1);

@@ -104,14 +104,9 @@ async function extractText(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
   if (file.type === "text/plain") return buffer.toString("utf8");
   if (file.type === "application/pdf") {
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer });
-    try {
-      const result = await parser.getText();
-      return result.text;
-    } finally {
-      await parser.destroy();
-    }
+    const { extractText: unpdfExtract } = await import("unpdf");
+    const { text } = await unpdfExtract(new Uint8Array(buffer), { mergePages: true });
+    return text;
   }
   // DOCX path is intentionally deferred: requires mammoth or similar.
   throw new Error("DOCX extraction not yet implemented in this build");
