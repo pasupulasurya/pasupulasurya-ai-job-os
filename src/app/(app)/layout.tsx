@@ -15,7 +15,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const appUser = await prisma.user.findUnique({
     where: { authId: authUser.id },
-    select: { id: true, name: true, email: true },
+    select: { id: true, firstName: true, lastName: true, email: true },
   });
   if (!appUser) {
     logger.error({ authId: authUser.id }, "appshell.user_not_found");
@@ -23,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }
 
   const email = appUser.email ?? authUser.email ?? "";
-  const initialSource = appUser.name?.trim() || email;
+  const initialSource = appUser.firstName?.trim() || appUser.lastName?.trim() || email;
   const initial = initialSource.charAt(0).toUpperCase() || "?";
 
   return (
