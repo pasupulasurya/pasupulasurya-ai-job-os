@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { OnboardingProgress } from "@/components/onboarding/progress";
 import { AuthBanner } from "@/components/auth/auth-banner";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { ChipInput } from "@/components/onboarding/chip-input";
@@ -74,6 +75,7 @@ export function PreferencesClientForm({ suggestedKeywords = [] }: Props) {
     <AuthShell
       title="Tell us what you're hunting for"
       subtitle="We'll match jobs against this — you can edit any time."
+      header={<OnboardingProgress current={4} total={4} />}
     >
       <form onSubmit={handleSubmit} className="space-y-6">
         {error && <AuthBanner variant="error" title="Couldn't save" message={error} />}

@@ -8,6 +8,8 @@ interface AuthShellProps {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  /** Optional header element rendered above the title (e.g., progress indicator) */
+  header?: React.ReactNode;
   /** Optional footer link (e.g., "Don't have an account?") */
   footer?: {
     text: string;
@@ -20,7 +22,7 @@ interface AuthShellProps {
  * Reusable wrapper for auth pages.
  * Centers content, applies entrance animation, displays branded header.
  */
-export function AuthShell({ title, subtitle, children, footer }: AuthShellProps) {
+export function AuthShell({ title, subtitle, children, header, footer }: AuthShellProps) {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-6 py-12">
       <motion.div
@@ -35,6 +37,9 @@ export function AuthShell({ title, subtitle, children, footer }: AuthShellProps)
             <div className="text-text-tertiary text-sm tracking-wider uppercase">AI Job OS</div>
           </Link>
         </div>
+
+        {/* Optional header (e.g., progress bar) */}
+        {header && <div className="mb-6 flex justify-center">{header}</div>}
 
         {/* Title block */}
         <div className="mb-8 space-y-2 text-center">

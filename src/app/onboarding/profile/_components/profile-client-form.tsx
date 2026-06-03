@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { OnboardingProgress } from "@/components/onboarding/progress";
 import { AuthBanner } from "@/components/auth/auth-banner";
 import { profileSchema } from "@/shared/schemas/profile";
 import { saveProfileAction } from "@/server/actions/profile";
@@ -51,6 +52,7 @@ export function ProfileClientForm({ initialValues }: Props) {
     <AuthShell
       title="Tell us about yourself"
       subtitle="A few basics so we can personalize your experience."
+      header={<OnboardingProgress current={2} total={4} />}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         {error && <AuthBanner variant="error" title="Couldn't save" message={error} />}

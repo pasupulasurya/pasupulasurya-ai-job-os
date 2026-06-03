@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Upload, FileText, CheckCircle2, ChevronLeft, X, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { OnboardingProgress } from "@/components/onboarding/progress";
 import { AuthBanner } from "@/components/auth/auth-banner";
 import { uploadMasterResumeAction } from "@/server/actions/resume";
 import { spring } from "@/styles/tokens";
@@ -94,6 +95,7 @@ export function ResumeUploadForm({ existingFileName }: { existingFileName: strin
     <AuthShell
       title="Upload your resume"
       subtitle="We'll parse it to suggest skills and match jobs."
+      header={<OnboardingProgress current={3} total={4} />}
     >
       <div className="space-y-6">
         <AnimatePresence mode="wait">

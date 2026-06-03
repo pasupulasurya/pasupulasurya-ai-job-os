@@ -5,6 +5,7 @@ import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { AuthShell } from "@/components/auth/auth-shell";
+import { OnboardingProgress } from "@/components/onboarding/progress";
 
 export const dynamic = "force-dynamic";
 
@@ -42,7 +43,11 @@ export default async function OnboardingWelcomePage() {
   ];
 
   return (
-    <AuthShell title="Welcome to AI Job OS" subtitle="Let's set up your profile in 3 quick steps.">
+    <AuthShell
+      title="Welcome to AI Job OS"
+      subtitle="Let's set up your profile in 3 quick steps."
+      header={<OnboardingProgress current={1} total={4} />}
+    >
       <div className="space-y-8">
         <ol className="space-y-4">
           {steps.map((step, i) => {
