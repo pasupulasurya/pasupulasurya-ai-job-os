@@ -4,6 +4,7 @@ import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { signOutAction } from "@/server/actions/auth";
 import { FileText, Briefcase, Eye } from "lucide-react";
+import { PersonalInfoSection } from "./_components/personal-info-section";
 import { PreferencesForm } from "./_components/preferences-form";
 
 export const dynamic = "force-dynamic";
@@ -82,6 +83,15 @@ export default async function SettingsPage() {
             </button>
           </form>
         </section>
+
+        {/* Personal info */}
+        <PersonalInfoSection
+          initialValues={{
+            firstName: appUser.firstName ?? "",
+            lastName: appUser.lastName ?? "",
+            phone: appUser.phone ?? "",
+          }}
+        />
 
         {/* Resume card */}
         <section>
