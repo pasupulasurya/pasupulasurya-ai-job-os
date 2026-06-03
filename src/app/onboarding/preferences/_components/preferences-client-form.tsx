@@ -19,10 +19,15 @@ type JobType = "full-time" | "internship" | "contract" | "part-time";
 
 type Props = {
   suggestedKeywords?: string[];
+  suggestedTargetRoles?: string[];
 };
 
-export function PreferencesClientForm({ suggestedKeywords = [] }: Props) {
+export function PreferencesClientForm({
+  suggestedKeywords = [],
+  suggestedTargetRoles = [],
+}: Props) {
   const [keywords, setKeywords] = useState<string[]>([]);
+  const [targetRoles, setTargetRoles] = useState<string[]>([]);
   const [excludeKeywords, setExcludeKeywords] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
   const [jobTypes, setJobTypes] = useState<JobType[]>([]);
@@ -37,9 +42,17 @@ export function PreferencesClientForm({ suggestedKeywords = [] }: Props) {
   // Filter suggestions: hide chips already added to keywords (case-insensitive).
   const lowerKeywords = new Set(keywords.map((k) => k.toLowerCase()));
   const visibleSuggestions = suggestedKeywords.filter((s) => !lowerKeywords.has(s.toLowerCase()));
+  const lowerTargetRoles = new Set(targetRoles.map((t) => t.toLowerCase()));
+  const visibleRoleSuggestions = suggestedTargetRoles.filter(
+    (s) => !lowerTargetRoles.has(s.toLowerCase()),
+  );
 
   function addSuggestion(s: string) {
     setKeywords((prev) => [...prev, s]);
+  }
+
+  function addRoleSuggestion(s: string) {
+    setTargetRoles((prev) => [...prev, s]);
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -49,6 +62,7 @@ export function PreferencesClientForm({ suggestedKeywords = [] }: Props) {
     const input = {
       keywords,
       excludeKeywords,
+      targetRoles,
       locations,
       jobTypes,
       experienceMin,
@@ -122,6 +136,42 @@ export function PreferencesClientForm({ suggestedKeywords = [] }: Props) {
           hint="Skip jobs that mention these terms."
           values={excludeKeywords}
           onChange={setExcludeKeywords}
+        />
+
+        {visibleRoleSuggestions.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-text-tertiary text-xs tracking-widest uppercase">
+              Roles from your resume — tap to add
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <AnimatePresence initial={false}>
+                {visibleRoleSuggestions.map((s) => (
+                  <motion.button
+                    key={s}
+                    type="button"
+                    layout
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={spring.snappy}
+                    onClick={() => addRoleSuggestion(s)}
+                    className="border-border text-text-secondary hover:border-accent hover:text-accent inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-colors"
+                  >
+                    <Plus size={10} strokeWidth={2} />
+                    {s}
+                  </motion.button>
+                ))}
+              </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        <ChipInput
+          label="Target roles (optional)"
+          placeholder="e.g. Senior ML Engineer, Staff Data Scientist"
+          hint="Specific job titles you want to target."
+          values={targetRoles}
+          onChange={setTargetRoles}
         />
 
         <ExperienceRange

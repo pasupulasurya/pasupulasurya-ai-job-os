@@ -42,6 +42,8 @@ export default async function SettingsPage() {
   type ParsedResume = {
     totalYearsExperience?: number | null;
     skills?: unknown;
+    currentRole?: unknown;
+    workHistory?: unknown;
   } | null;
   const parsed = (masterResume?.parsedJson as ParsedResume) ?? null;
 
@@ -56,6 +58,23 @@ export default async function SettingsPage() {
         ),
       ).slice(0, 15)
     : [];
+
+  // Surface resume-extracted role titles as suggested chips above the target roles input.
+  const roleCandidates: string[] = [];
+  if (typeof parsed?.currentRole === "string" && parsed.currentRole.trim().length > 0) {
+    roleCandidates.push(parsed.currentRole.trim());
+  }
+  if (Array.isArray(parsed?.workHistory)) {
+    for (const role of parsed.workHistory as unknown[]) {
+      if (role && typeof role === "object" && "title" in role) {
+        const t = (role as { title: unknown }).title;
+        if (typeof t === "string" && t.trim().length > 0) roleCandidates.push(t.trim());
+      }
+    }
+  }
+  const suggestedTargetRoles: string[] = Array.from(
+    new Set(roleCandidates.map((c) => c.toLowerCase())),
+  ).slice(0, 5);
 
   const appliedCount = appUser.jobMatches.filter((m) => m.status === "applied").length;
   const viewedCount = appUser.jobMatches.filter((m) => m.status === "viewed").length;
@@ -165,6 +184,7 @@ export default async function SettingsPage() {
           </h2>
           <PreferencesForm
             suggestedKeywords={suggestedSkills}
+            suggestedTargetRoles={suggestedTargetRoles}
             initialValues={{
               keywords: appUser.preferences?.keywords ?? [],
               excludeKeywords: appUser.preferences?.excludeKeywords ?? [],

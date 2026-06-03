@@ -70,9 +70,11 @@ export type PreferencesFormValues = {
 export function PreferencesForm({
   initialValues,
   suggestedKeywords = [],
+  suggestedTargetRoles = [],
 }: {
   initialValues: PreferencesFormValues;
   suggestedKeywords?: string[];
+  suggestedTargetRoles?: string[];
 }) {
   const [keywords, setKeywords] = useState(initialValues.keywords);
   const [excludeKeywords, setExcludeKeywords] = useState(initialValues.excludeKeywords);
@@ -217,6 +219,14 @@ export function PreferencesForm({
           onChange={setKeywords}
           suggestions={ROLE_SUGGESTIONS}
           hint="Type to see suggestions, or add your own. At least one required."
+        />
+        <SuggestedChipsRow
+          suggestions={suggestedTargetRoles.filter(
+            (s) => !targetRoles.some((t) => t.toLowerCase() === s.toLowerCase()),
+          )}
+          onPick={(value) => {
+            if (!targetRoles.includes(value)) setTargetRoles([...targetRoles, value]);
+          }}
         />
         <ChipInput
           label="Target roles"
