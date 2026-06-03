@@ -161,7 +161,7 @@ Core: `id, userId (REQUIRED), jobId (optional), contentJson, pdfUrl, docxUrl, cr
 | Skill match                     | String intersection (lowercase + word boundary). Embeddings deferred to Phase 2H+.                                                                                       |
 | Groq free tier (8b-instant)     | 14,400 RPD / 30,000 TPM / 500,000 TPD                                                                                                                                    |
 | Groq free tier (70b)            | 1,000 RPD / 6,000 TPM / 100,000 TPD                                                                                                                                      |
-| Enrichment version              | `groq-llama-3.1-8b-v2`                                                                                                                                                   |
+| Enrichment version              | `groq-llama-3.1-8b-v3` (bumped Mon after tightened anti-hallucination prompt; v2 re-enrich runs ~120/day for ~4 days)                                                    |
 | Enrichment throttle             | 500ms between successful jobs                                                                                                                                            |
 | Enrichment max_tokens           | 512                                                                                                                                                                      |
 | Enrichment truncation           | 2,000 chars                                                                                                                                                              |
@@ -184,6 +184,14 @@ Core: `id, userId (REQUIRED), jobId (optional), contentJson, pdfUrl, docxUrl, cr
 | **Matcher relevance gate**      | Cap at 35 if titleKw=0 AND skills=0 AND both have data                                                                                                                   |
 | **Matcher word matching**       | Word-boundary regex                                                                                                                                                      |
 | MIN_SCORE_TO_PERSIST            | 40                                                                                                                                                                       |
+| **Min preference keywords**     | 3 (was 1; bumped Mon after overwrite incident — schema rejects fewer with explanatory error)                                                                             |
+| **PDF text extraction**         | `unpdf` (serverless-friendly, no worker). Replaced pdf-parse v2 Mon (Next.js worker .mjs not found at runtime).                                                          |
+| **Phone validation**            | Y-lenient: accept any common format on input, normalize to E.164 in Zod transform (strip non-digits, prepend +1 if no leading +). Empty becomes null.                    |
+| **Drag-drop pattern**           | Native HTML5 onDragEnter/Leave/Over/Drop. `useRef` counter avoids onDragLeave flicker when entering child elements. No react-dropzone dep.                               |
+| **Upload state machine**        | 4 discriminated-union states: `idle` \| `uploading` \| `success` \| `error`. AnimatePresence drives state transitions with spring.snappy.                                |
+| **Mobile breakpoints**          | `md` (768px) for nav rail collapse; `sm` (640px) for content stacking. Hamburger top bar appears below md.                                                               |
+| **Mobile nav menu**             | Slide-in panel from left, 280px wide, dimmed backdrop (bg-black/60). Body scroll-lock while open. Escape + backdrop tap + nav item tap all close.                        |
+| **Score ring mobile**           | 40px above title on mobile (own row, right-aligned); 48px right of title on desktop. ScoreRing accepts `size?` prop, two instances with md:hidden / hidden md:block.     |
 | **Dashboard onboarding gate**   | `keywords.length > 0` (NOT `onboardingComplete`)                                                                                                                         |
 | **Empty state UX**              | Auto-trigger matcher + rotating progress phrases + AnimatePresence                                                                                                       |
 | **Action ownership check**      | All match Server Actions filter on BOTH matchId AND userId before mutation                                                                                               |
@@ -224,16 +232,20 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 
 - `auth.ts` — signup/signin/signout (signOutAction is form action)
 - `preferences.ts` — savePreferencesAction(input, redirectTo?) — null skips redirect
-- `resume.ts` — uploadMasterResumeAction (5MB cap, atomic master-switch)
+- `profile.ts` — saveProfileAction (firstName/lastName/phone, Zod-normalized phone to E.164)
+- `resume.ts` — uploadMasterResumeAction (5MB cap, atomic master-switch, unpdf extraction)
 - `match.ts` — markViewed / dismiss / markApplied / triggerMatcher (all ownership-checked)
 
 ### App routes (`src/app/`)
 
 - `/login`, `/signup` (Phase 2B) — outside (app) group
-- `/onboarding/preferences` (Phase 2B) — outside (app) group
+- `/onboarding/welcome` (Phase 2E.5) — outside (app); 3-step preview, "Get started" CTA, redirects fully-onboarded users to /dashboard
+- `/onboarding/profile` (Phase 2E.5) — outside (app); firstName + lastName + phone collection with Y-lenient normalization
+- `/onboarding/resume` (Phase 2E.5) — outside (app); native HTML5 drag-drop + click-to-browse, 4-state state machine, calls uploadMasterResumeAction
+- `/onboarding/preferences` (Phase 2B + 2E.3.B) — outside (app); 8-field form with AI-suggested chips from parsedJson.skills
 - `/dashboard` (Phase 2E.3.A + B) — inside (app)/ — daily briefing with stagger-in + score reveal + expandable breakdown
-- `/settings` (Phase 2E.3.B) — inside (app)/ — configuration hub with AI-suggested keywords
-- Future: `/applications` (Phase 2I), `/onboarding/resume` (Phase 2E.3.B)
+- `/settings` (Phase 2E.3.B) — inside (app)/ — configuration hub with AI-suggested keywords + dirty field counter
+- Future: `/applications` (Phase 2I)
 
 ### AppShell (`src/app/(app)/`)
 
@@ -261,6 +273,16 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 - `job-type-select.tsx` — toggle pills for job types
 - `preference-toggle.tsx` — switch with label/description (takes `value` not `checked`)
 
+### Onboarding components (`src/app/onboarding/`)
+
+- `welcome/page.tsx` — Server Component, 3-step preview cards with numbered circles + icons, completion-check redirect
+- `profile/page.tsx` — Server Component, prefill from existing user, renders `<ProfileClientForm>`
+- `profile/_components/profile-client-form.tsx` — Client form, useTransition save, motion.button with isPending spinner
+- `resume/page.tsx` — Server Component, fetches existing master fileName, renders `<ResumeUploadForm>`
+- `resume/_components/resume-upload-form.tsx` — Native HTML5 drag-drop, 4-state state machine, AnimatePresence transitions
+- `preferences/page.tsx` — Server Component, computes suggestedSkills from parsedJson, renders `<PreferencesClientForm>`
+- `preferences/_components/preferences-client-form.tsx` — Client form, inline SuggestedChipsRow above Keywords ChipInput
+
 ### Data files (`src/shared/data/`)
 
 - `role-suggestions.ts` — curated job titles/skills for ChipInput autocomplete
@@ -274,12 +296,17 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 - `reasons.ts`, `show-reasons.ts`
 - `show-breakdown.ts` — dev helper, prints scoreBreakdown JSON for top match
 - `show-parsed-skills.ts` — dev helper, prints fileName + skills array from parsed resume
+- `show-prefs.ts` — dev helper, prints UserPreference row as JSON
+- `show-bad-match.ts` — dev helper, prints job + match breakdown for a low-quality match
+- `show-cluster.ts` — dev helper, lists matches in a score range with skills arrays
+- `match-diagnostics.ts` — dev helper, total/enriched counts + match score distribution
+- `test-enrich-prompt.ts` — A/B tests enrichment prompts against known-bad DB jobs without DB writes
 - `undismiss-all.ts` — dev helper to reset matches for repeated testing
 
 ### GitHub Actions
 
 - `daily-cron.yml` — 11:00 UTC, 15-min timeout, scrape + cleanup
-- `daily-enrich.yml` — 12:00 UTC, 60-min timeout, enrich only
+- `daily-enrich.yml` — 12:00 UTC, 60-min timeout, runs enrich → match → reasons sequentially
 
 ---
 
@@ -374,46 +401,52 @@ Remaining (~6-10h, dedicated next session):
 - ✅ Prefs overwrite prevention shipped Monday (schema min(3) keywords + form dirty-field counter)
 - ✅ Enrichment v3 shipped Monday (tightened prompt, stops LLM hallucinating skills on non-technical roles)
 - ✅ Phase 2E.3.B mobile responsive shipped Monday (AppShell hamburger + dashboard + settings)
+- ✅ AI-suggested keywords on onboarding form shipped Monday (server+client split on /onboarding/preferences)
+- ✅ Phase 2E.5 partial shipped Monday (User schema split + welcome + profile + drag-drop resume upload, all end-to-end with unpdf + 70b parse)
 
 ---
 
 ## 8. CRITICAL FILES (current repo state)
 
-| Concern              | Path                                                                                                                                                        |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Front door           | `README.md`                                                                                                                                                 |
-| System map           | `ARCHITECTURE.md`                                                                                                                                           |
-| Working rhythm       | `COLLABORATION.md`                                                                                                                                          |
-| Build narrative      | `AI_JOB_OS_SESSION_JOURNAL.md`                                                                                                                              |
-| Vision               | `VISION.md`                                                                                                                                                 |
-| Decisions            | `docs/adr/*.md`                                                                                                                                             |
-| Design DNA           | `docs/design/principles.md`                                                                                                                                 |
-| Cron runbook         | `docs/runbooks/cron.md`                                                                                                                                     |
-| Design tokens        | `src/styles/tokens.ts`, `src/app/globals.css`                                                                                                               |
-| Prisma schema        | `prisma/schema.prisma`                                                                                                                                      |
-| SQL triggers         | `prisma/sql/0001_auth_signup_trigger.sql`                                                                                                                   |
-| Auth                 | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts`                                                                        |
-| Preferences action   | `src/server/actions/preferences.ts` (takes optional redirectTo)                                                                                             |
-| Onboarding form      | `src/app/onboarding/preferences/page.tsx` (still uses default /dashboard redirect)                                                                          |
-| AppShell layout      | `src/app/(app)/layout.tsx`                                                                                                                                  |
-| AppShell components  | `src/app/(app)/_components/{app-shell,user-menu}.tsx`                                                                                                       |
-| Dashboard route      | `src/app/(app)/dashboard/page.tsx`                                                                                                                          |
-| Dashboard components | `src/app/(app)/dashboard/_components/{match-card,match-list,empty-state,score-ring,score-breakdown}.tsx`                                                    |
-| Settings route       | `src/app/(app)/settings/page.tsx`                                                                                                                           |
-| Settings form        | `src/app/(app)/settings/_components/preferences-form.tsx`                                                                                                   |
-| Match Server Actions | `src/server/actions/match.ts`                                                                                                                               |
-| Resume upload action | `src/server/actions/resume.ts`                                                                                                                              |
-| Resume parser        | `src/server/services/ai/parse-resume.ts`                                                                                                                    |
-| Zod schemas          | `src/shared/schemas/preferences.ts`                                                                                                                         |
-| Suggestion data      | `src/shared/data/{role,location}-suggestions.ts`                                                                                                            |
-| Reusable inputs      | `src/components/onboarding/{chip-input,experience-range,job-type-select,preference-toggle}.tsx`                                                             |
-| Command palette      | `src/components/command-palette.tsx`                                                                                                                        |
-| Scrapers             | `src/server/services/scrapers/{greenhouse,ashby,location,hash,rules}.ts`                                                                                    |
-| LLM provider         | `src/server/services/ai/{llm,groq-provider}.ts`                                                                                                             |
-| Job enrichment       | `src/server/services/ai/enrich.ts`                                                                                                                          |
-| Matcher              | `src/server/services/matcher/{score,filters,match,reason}.ts`                                                                                               |
-| CLIs                 | `scripts/{scrape,cleanup,enrich,parse-resume,seed-master-resume,match,top-matches,reasons,show-reasons,show-breakdown,show-parsed-skills,undismiss-all}.ts` |
-| GitHub Actions       | `.github/workflows/{daily-cron,daily-enrich}.yml`                                                                                                           |
+| Concern              | Path                                                                                                                                                                                                                                    |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Front door           | `README.md`                                                                                                                                                                                                                             |
+| System map           | `ARCHITECTURE.md`                                                                                                                                                                                                                       |
+| Working rhythm       | `COLLABORATION.md`                                                                                                                                                                                                                      |
+| Build narrative      | `AI_JOB_OS_SESSION_JOURNAL.md`                                                                                                                                                                                                          |
+| Vision               | `VISION.md`                                                                                                                                                                                                                             |
+| Decisions            | `docs/adr/*.md`                                                                                                                                                                                                                         |
+| Design DNA           | `docs/design/principles.md`                                                                                                                                                                                                             |
+| Cron runbook         | `docs/runbooks/cron.md`                                                                                                                                                                                                                 |
+| Design tokens        | `src/styles/tokens.ts`, `src/app/globals.css`                                                                                                                                                                                           |
+| Prisma schema        | `prisma/schema.prisma`                                                                                                                                                                                                                  |
+| SQL triggers         | `prisma/sql/0001_auth_signup_trigger.sql`                                                                                                                                                                                               |
+| Auth                 | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts`                                                                                                                                                    |
+| Preferences action   | `src/server/actions/preferences.ts` (takes optional redirectTo)                                                                                                                                                                         |
+| Profile action       | `src/server/actions/profile.ts` (saveProfileAction with Zod-normalized phone)                                                                                                                                                           |
+| Onboarding prefs     | `src/app/onboarding/preferences/{page,_components/preferences-client-form}.tsx` (server+client split, suggested chips)                                                                                                                  |
+| Onboarding welcome   | `src/app/onboarding/welcome/page.tsx` (3-step preview, completion check)                                                                                                                                                                |
+| Onboarding profile   | `src/app/onboarding/profile/{page,_components/profile-client-form}.tsx` (firstName/lastName/phone with Y-lenient normalization)                                                                                                         |
+| Onboarding resume    | `src/app/onboarding/resume/{page,_components/resume-upload-form}.tsx` (native HTML5 drag-drop, 4-state machine)                                                                                                                         |
+| AppShell layout      | `src/app/(app)/layout.tsx`                                                                                                                                                                                                              |
+| AppShell components  | `src/app/(app)/_components/{app-shell,user-menu}.tsx`                                                                                                                                                                                   |
+| Dashboard route      | `src/app/(app)/dashboard/page.tsx`                                                                                                                                                                                                      |
+| Dashboard components | `src/app/(app)/dashboard/_components/{match-card,match-list,empty-state,score-ring,score-breakdown}.tsx`                                                                                                                                |
+| Settings route       | `src/app/(app)/settings/page.tsx`                                                                                                                                                                                                       |
+| Settings form        | `src/app/(app)/settings/_components/preferences-form.tsx`                                                                                                                                                                               |
+| Match Server Actions | `src/server/actions/match.ts`                                                                                                                                                                                                           |
+| Resume upload action | `src/server/actions/resume.ts` (unpdf extraction, 70b parse, atomic master-switch)                                                                                                                                                      |
+| Resume parser        | `src/server/services/ai/parse-resume.ts`                                                                                                                                                                                                |
+| Zod schemas          | `src/shared/schemas/{preferences,profile}.ts` (profile has E.164 phone transform + refine)                                                                                                                                              |
+| Suggestion data      | `src/shared/data/{role,location}-suggestions.ts`                                                                                                                                                                                        |
+| Reusable inputs      | `src/components/onboarding/{chip-input,experience-range,job-type-select,preference-toggle}.tsx`                                                                                                                                         |
+| Command palette      | `src/components/command-palette.tsx`                                                                                                                                                                                                    |
+| Scrapers             | `src/server/services/scrapers/{greenhouse,ashby,location,hash,rules}.ts`                                                                                                                                                                |
+| LLM provider         | `src/server/services/ai/{llm,groq-provider}.ts`                                                                                                                                                                                         |
+| Job enrichment       | `src/server/services/ai/enrich.ts`                                                                                                                                                                                                      |
+| Matcher              | `src/server/services/matcher/{score,filters,match,reason}.ts`                                                                                                                                                                           |
+| CLIs                 | `scripts/{scrape,cleanup,enrich,parse-resume,seed-master-resume,match,top-matches,reasons,show-reasons,show-breakdown,show-parsed-skills,show-prefs,show-bad-match,show-cluster,match-diagnostics,test-enrich-prompt,undismiss-all}.ts` |
+| GitHub Actions       | `.github/workflows/{daily-cron,daily-enrich}.yml`                                                                                                                                                                                       |
 
 ---
 
@@ -447,33 +480,37 @@ When you update CONTEXT.md, re-upload to the project to replace.
 
 ## 11. NEXT SESSION CHECKLIST (priority order)
 
-Today (2026-05-29 evening) shipped: stagger-in card entrance, why-this-score expandable view, AI-suggested keywords from parsed resume. Three commits to main. Dashboard now feels properly cinematic on every load — cards cascade in, scores reveal, breakdowns expand on demand. Settings form actively surfaces what the system knows about the user.
+Monday (2026-06-01) shipped a major session: 9 commits including Phase 2E.4 cron wiring, prefs overwrite prevention (min-3 keywords + dirty counter), enrichment v3 (anti-hallucination prompt), full mobile responsive (AppShell + dashboard + settings), AI-suggested chips on onboarding, User schema split (firstName/lastName/phone), and Phase 2E.5 partial (welcome + profile + drag-drop resume upload with unpdf). End-to-end onboarding now works for new users.
+
+Tuesday (2026-06-02) is starting fresh with 4-hour budget. Edit-personal-info in /settings is today's primary ship.
 
 **Next session priorities:**
 
-1. **Verify enrichment backfill progress.** Check job count where `enrichmentVersion = "groq-llama-3.1-8b-v2"`. Tracking ~120/day, should reach full ~1,300 by ~June 5-6.
-2. **Re-run matcher with `--force --all-users`** to repopulate against newly-enriched data. Expect more matches per user and higher top scores as data densifies.
-3. **Re-run reasons with `--force --all-users --limit=10`** for newly-promoted matches.
-4. **Phase 2E.3.B wave 3 — pick in order of impact:**
-   - **Mobile responsive** — biggest remaining gap, real users on phones (~6h, can split across sessions)
-   - **Suggested target roles from currentRole** — quick win pairing with today's AI-suggested keywords (~1h)
-   - **Proper /onboarding/resume route** with drag-drop (~3h)
-5. **Phase 2E.4 — wire matcher + reasons to daily cron** (~2h)
-6. **Phase 2I — application tracker** — the nav item placeholder needs a real route eventually
+1. **Edit personal info section in /settings** (~1.5-2h) — settings page needs a new section for firstName/lastName/phone edits. Closes the most visible Phase 2E.5 gap. (Today's primary task.)
+2. **Verify v3 enrichment backfill progress.** Query `enrichmentVersion = "groq-llama-3.1-8b-v3"` count daily. Target ~482 v2 jobs re-enriched over ~4 days, completing approximately June 5.
+3. **Parser prompt tightening** (~1.5h) — fix "coursera" (cert provider) and "chrodadb" (misread of ChromaDB) noise. Use the test-harness pattern from Monday's enrichment v3 work (scripts/test-enrich-prompt.ts).
+4. **Progress indicator UI across onboarding** (~1.5h) — "Step 2 of 4" header on welcome/profile/resume/preferences. Real polish for Phase 2E.5.
+5. **Country picker for phone** (~2h) — currently defaults to +1, international workers need a proper picker. Phase 2E.5 continued.
+6. **Suggested target roles from currentRole** (~1h) — quick polish win, same UX as the suggested chips already shipped.
+7. **Tighten User.firstName/lastName to non-null** (~30min migration + code updates) — once all new users go through profile step, the nullable fallback is no longer needed.
+8. **Phase 2F — Vercel deploy** (~3-4h) — gated on v3 backfill completion (~June 5-6) AND one more Phase 2E.5 polish ship. After both, deploy is the milestone.
 
-**Not on critical path:**
+**Not on critical path until later:**
 
 - Cerebras provider (Phase 2G dependency)
-- Vercel deploy (Phase 2F)
-- Resume tailoring (Phase 2G)
+- Resume tailoring (Phase 2G, ~20-30h multi-session)
+- Email digest / Playwright application auto-fill (Phase 2H)
+- DOCX upload support (Phase 2E.5 continued, low priority)
+- Phase 2I application tracker
 
 **Reflection notes for future sessions:**
 
-Today's pattern continued working: budget honestly (6h given), use what's needed (~2.5h actual), ship clean, stop. Three of today's items came in dramatically under estimate because the architecture from previous sessions was already in place — design tokens, motion patterns, the score breakdown data, the parsed resume data. **Discipline compounds. Decisions made well in earlier sessions made today's session fast.**
+Monday's session pattern was unusual — 9 commits in ~10-11 hours of laptop time, including a real schema migration and end-to-end onboarding pipeline. Pre-built infrastructure (design tokens, motion patterns, validation schemas, idempotency in CLI scripts) made each ship cheap. But the session also featured: a near-miss with `prisma migrate dev` that would have wiped the DB, a pdf-parse → unpdf swap discovered mid-session, and the quality-gate pattern getting tested by repeated "keep going" reflex. **Sustainable rhythm is 2-4 hour focused sessions, not 8-hour pushes.**
 
-Two specific patterns worth remembering:
+Three specific patterns worth remembering:
 
 1. **Multi-line Node `-e` scripts have backtick escape problems.** Write `.mjs` scripts to disk instead, then `node /tmp/patch.mjs`. Safer for multi-anchor patches.
-2. **Commitlint enforces subject-case lowercase.** "ai-suggested" not "AI-suggested" in commit subjects, even when the feature name uses caps.
+2. **Commitlint enforces subject-case lowercase.** "ai-suggested" not "AI-suggested" in commit subjects.
+3. **`prisma db push` is the workflow for this project — NOT `prisma migrate dev`.** db push syncs schema without writing migration history files (which would conflict with the existing drift). migrate dev would offer to reset the DB, destroying all data. Always read DB-touching commands carefully before pressing y.
 
 ---
