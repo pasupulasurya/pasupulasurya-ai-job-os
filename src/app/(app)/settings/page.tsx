@@ -60,7 +60,7 @@ export default async function SettingsPage() {
   const appliedCount = appUser.jobMatches.filter((m) => m.status === "applied").length;
   const viewedCount = appUser.jobMatches.filter((m) => m.status === "viewed").length;
 
-  const displayName = appUser.firstName ?? authUser.email?.split("@")[0] ?? "there";
+  const displayName = appUser.firstName;
   const memberSince = formatDate(appUser.createdAt);
 
   return (

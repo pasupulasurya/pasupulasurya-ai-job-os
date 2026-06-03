@@ -75,7 +75,7 @@ export default async function DashboardPage() {
     },
   });
 
-  const firstName = appUser.firstName ?? authUser.email?.split("@")[0] ?? "there";
+  const firstName = appUser.firstName;
   const today = new Date().toLocaleDateString(undefined, {
     weekday: "long",
     month: "long",
