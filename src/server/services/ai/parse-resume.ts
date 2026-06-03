@@ -9,7 +9,7 @@ import {
   LLMValidationError,
 } from "./llm";
 
-export const RESUME_PARSE_VERSION = "groq-llama-3.3-70b-resume-v2";
+export const RESUME_PARSE_VERSION = "groq-llama-3.3-70b-resume-v3";
 const RESUME_TRUNCATE_CHARS = 12_000;
 const MAX_WORK_HISTORY = 20;
 const MAX_EDUCATION = 10;
@@ -58,7 +58,7 @@ export const ResumeParseSchema = z.object({
 export type ResumeParse = z.infer<typeof ResumeParseSchema>;
 
 const SYSTEM_PROMPT =
-  "You extract structured data from resumes. Return ONLY a JSON object matching the requested shape exactly. Use null when a field is missing or unclear. Never invent details that are not in the resume. Keep bullet text verbatim from the resume — do not summarize, rephrase, or expand it.";
+  "You extract structured data from resumes. Return ONLY a JSON object matching the requested shape exactly. Use null when a field is missing or unclear. Never invent details that are not in the resume. Keep bullet text verbatim from the resume — do not summarize, rephrase, or expand it. For skills, extract every named technology, library, framework, language, tool, platform, database, and ML model in the resume — do not deduplicate semantically similar terms (if the resume names both 'GCP' and 'GCP Vertex AI', include both; if it names 'sentence-bert' and 'sentence-transformers', include both).";
 
 function buildUserPrompt(rawText: string): string {
   const trimmed =
@@ -85,7 +85,7 @@ function buildUserPrompt(rawText: string): string {
     ``,
     `Rules:`,
     `- bullets: keep verbatim from the resume. No rewriting.`,
-    `- skills: technical skills only (languages, frameworks, tools, platforms). Lowercase. Dedupe.`,
+    `- skills: every named technology, library, framework, language, tool, platform, database, and ML model in the resume. Lowercase. Dedupe exact duplicates only — do NOT merge variants ('sentence-bert' and 'sentence-transformers' are different entries if both appear; 'gcp' and 'gcp vertex ai' are different entries if both appear). Cleaning of misspellings, course providers, and garbage terms happens after extraction in code — do not filter here.`,
     `- dates: prefer "Jan 2024" or "2024-01" format. null if missing.`,
     `- endDate: null if the role is current ("Present", "Now").`,
     `- summary: ONLY include if a summary/objective section is in the resume. Otherwise null.`,
@@ -95,9 +95,58 @@ function buildUserPrompt(rawText: string): string {
   ].join("\n");
 }
 
+/**
+ * Skills that should NEVER appear in the output even if the LLM extracts them.
+ * Course providers, learning platforms, generic single-word filler.
+ * Lowercase keys. Add new entries here as patterns emerge from real resumes.
+ */
+const SKILL_BLOCKLIST = new Set<string>([
+  // Course providers and learning platforms
+  "coursera",
+  "udemy",
+  "edx",
+  "datacamp",
+  "pluralsight",
+  "linkedin learning",
+  "udacity",
+  // Generic filler words that aren't named technologies
+  "cloud",
+  "ai",
+  "ml",
+  "machine learning", // too generic on its own; specific frameworks captured separately
+  "deep learning",
+  "data science",
+  "computer science",
+]);
+
+/**
+ * Canonical-form fixes for common OCR errors and misreads.
+ * Lowercase keys → lowercase canonical values.
+ * Add new entries when a known typo pattern emerges.
+ */
+const SKILL_CANONICAL: Record<string, string> = {
+  // OCR/extraction errors observed in real resumes
+  chrodadb: "chromadb",
+  tensoflow: "tensorflow",
+  tensorflw: "tensorflow",
+  pythn: "python",
+  pyhon: "python",
+  qllor: "qlora",
+  llor: "lora",
+  sps: "spss",
+  pyrotch: "pytorch",
+  pytroch: "pytorch",
+};
+
 function sanitize(raw: ResumeParse): ResumeParse {
   const skills = Array.from(
-    new Set(raw.skills.map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0)),
+    new Set(
+      raw.skills
+        .map((s) => s.trim().toLowerCase())
+        .map((s) => SKILL_CANONICAL[s] ?? s) // canonical-form fix
+        .filter((s) => s.length > 0)
+        .filter((s) => !SKILL_BLOCKLIST.has(s)), // blocklist removal
+    ),
   ).slice(0, MAX_SKILLS);
   return { ...raw, skills };
 }
