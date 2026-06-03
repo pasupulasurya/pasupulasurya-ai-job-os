@@ -355,10 +355,116 @@ Remaining (~6-10h, dedicated next session):
 
 - env var migration, edge vs node runtime decisions, upload limits, cold-start handling
 
-### Phase 2G — Resume tailoring (Locked/Tailored split, PDF + DOCX, single-page, ATS-friendly)
+### Phase 2G — Resume tailoring (multi-session, ~25-35h total)
 
-- Uses `llama-3.3-70b-versatile` split 50/50 Groq + Cerebras
-- Add Cerebras provider following same interface
+**Product thesis:**
+
+A match score of 60% means the job is worth pursuing — but the missing 40% is what gets the resume screened out. Resume tailoring closes that gap not by lying, but by surfacing relevant truth that the master resume buries beneath other content. The tailored resume must convince two readers:
+
+1. **The ATS keyword parser** — keyword density on job-required skills, role-title alignment, technologies surfaced in the first half of the document
+2. **A senior recruiter with decades of experience** — readable, credible, no obvious AI noise, no fabricated claims that fall apart under questioning
+
+The bar: a senior recruiter reading the tailored resume should think "yeah, this person fits" — not "this was clearly AI-generated."
+
+**What the LLM CAN change (allowed transformations):**
+
+- Reorder skills array to put job-relevant skills first
+- Reorder work history bullets within a role to emphasize matching experience
+- Rewrite the summary/objective to use the job's terminology — but every claim must trace to master content
+- Rewrite individual bullet text to use job's vocabulary (e.g., "machine learning models" -> "ML/AI systems" if the job uses that phrasing) — but the underlying fact must exist in master
+- Decide which 6-10 bullets per role get included (single-page constraint forces selection)
+- Truncate/select which work history rows to include if too long for one page
+
+**What the LLM CANNOT change (forbidden — produces fabrication):**
+
+- Add a skill not present in master.parsedJson.skills
+- Add a bullet that doesn't trace to a master bullet (1:1 or split allowed; invention forbidden)
+- Change a company name, job title, or dates
+- Change education details (school, degree, dates)
+- Claim experience the master doesn't claim
+
+**The hard problem: verification, not generation.**
+
+Generation is the easy 30%. The hard 70% is detecting when the LLM crosses the line into fabrication. The architecture must catch this BEFORE the user sees fabricated content.
+
+**Architecture:**
+
+1. **TailoredResume model** (new Prisma table):
+   - id, userId, masterResumeId (FK), jobId (FK), createdAt, updatedAt
+   - tailoredJson (parsedJson shape, same schema as master)
+   - changesJson (structured diff against master)
+   - userOverridesJson (per-change accept/revert state)
+   - status: "draft" | "accepted" | "downloaded"
+   - llmModel, llmVersion (provenance)
+
+2. **Generation flow** (Server Action: `tailorResumeForMatch(matchId)`):
+   - Load master.parsedJson + job (title + description + extractedSkills from enrichment)
+   - LLM call with system prompt: "rewrite this resume for this job, following these rules: [allowed/forbidden list]"
+   - LLM returns tailoredJson in same parsedJson shape
+   - **Verification pass (the critical step):**
+     - Every skill in tailoredJson.skills MUST exist (case-insensitive) in masterJson.skills. Reject otherwise.
+     - Every bullet in tailoredJson.workHistory MUST be derivable from a master bullet — use string similarity (Levenshtein or cosine over embeddings) with a threshold. Bullets below threshold are flagged as "possibly fabricated."
+     - Every company + title + date triple must match a master row exactly.
+   - If verification fails on >0 fabrication flags: either auto-retry with stronger constraints, or surface to user as "AI produced fabrication, please regenerate."
+   - **Structural diff computation:**
+     - Mechanical comparison master.parsedJson vs tailoredJson — NOT LLM self-report
+     - Produces changesJson: array of typed changes
+       - { type: "skill_reorder", old: [...], new: [...] }
+       - { type: "skill_added_from_master", skill: "..." } (allowed)
+       - { type: "skill_removed", skill: "..." } (allowed — they didn't include it)
+       - { type: "bullet_reword", company, title, bulletIndex, oldText, newText, similarity }
+       - { type: "bullet_reorder", company, title, oldOrder: [0,1,2], newOrder: [2,0,1] }
+       - { type: "summary_rewrite", oldText, newText }
+       - { type: "section_omitted", section: "education[2]" } (single-page constraint)
+   - Persist tailoredJson + changesJson to TailoredResume row
+
+3. **UI: `/dashboard/tailor/[matchId]` route** (new):
+   - Two clean documents side-by-side: master (left, read-only), tailored (right, editable)
+   - Each rendered from parsedJson — NOT raw PDF text — so they look identical in style
+   - Below: "What changed" panel — list of changes from changesJson
+   - Each change has: "Keep" (default) and "Revert to master" buttons
+   - Reverting a change updates the tailored render in real time (client state, persisted to userOverridesJson on save)
+   - Bottom buttons:
+     - "Regenerate" — calls tailorResumeForMatch again with fresh LLM call
+     - "Download PDF" — renders tailoredJson with applied user overrides to PDF (using existing PDF skill or a new renderer)
+     - "Download DOCX" — same, DOCX output (Phase 2G.2, later)
+
+4. **LLM strategy:**
+   - Primary: `llama-3.3-70b-versatile` (current)
+   - Once Cerebras provider added: split 50/50 across Groq and Cerebras for daily quota expansion
+   - Verification is the limiter, not generation — even if quota constrains us to 10 tailorings/day, that's plenty for the early phase
+
+**Sub-phases:**
+
+- **Phase 2G.0** (~2-3h): Cerebras provider implementing LLMProvider interface, same shape as Groq. Free-tier quota check. No tailoring yet, just the provider.
+- **Phase 2G.1** (~10-12h): TailoredResume table + tailorResumeForMatch action + verification pass + structural diff computation. Test against 5-10 jobs from current dashboard. No UI yet, just the engine.
+- **Phase 2G.2** (~8-10h): /dashboard/tailor/[matchId] route, side-by-side preview from parsedJson, "what changed" panel with per-change revert, real-time tailored re-render on revert.
+- **Phase 2G.3** (~5-8h): PDF rendering from tailoredJson using existing PDF skill. ATS-friendly layout (no multi-column tricks, no fancy fonts, semantic structure). Download flow.
+- **Phase 2G.4** (~3-5h, optional): DOCX rendering. Same content, .docx output for users who need to upload to ATS systems that prefer DOCX.
+
+**Failure modes to handle:**
+
+- LLM produces tailored content that doesn't fit on one page → render shows overflow warning, suggest user remove some bullets
+- LLM fabricates a skill → verification catches, blocks save, surfaces to user
+- LLM removes a critical bullet user wanted → "Revert this change" puts it back
+- ATS parser still rejects → out of scope for v1, document as known limitation, log which job's ATS failed for future research
+
+**Dependencies (must ship before Phase 2G.1 can start):**
+
+- Phase 2F (Vercel deploy) — tailoring is a feature users do on production, not localhost
+- Cerebras provider (Phase 2G.0) — for 70b quota capacity
+- v3 enrichment backfill complete — for high-quality skills array on job rows that tailoring will target
+
+**Not in scope for Phase 2G (deferred to Phase 2H+):**
+
+- Auto-apply (Playwright automation submitting the tailored resume) — separate massive phase
+- Resume version history beyond master + most-recent-tailored — keep it simple
+- Multi-master support (different masters for different career tracks)
+- A/B testing different tailoring strategies — too early, no signal yet
+
+**Defining "done" for Phase 2G:**
+
+A user can click a match on their dashboard, click "Tailor for this job," see the master and tailored versions side-by-side with all changes highlighted, revert any change they disagree with, and download a clean PDF that a senior recruiter would read and not immediately suspect was AI-generated. Verification catches 100% of fabricated skills and >95% of fabricated bullets (measured against a hand-labeled test set of 50 generations).
 
 ### Phase 2H+ — Email digest, application auto-fill (Playwright), Gmail intelligence
 
