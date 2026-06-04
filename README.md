@@ -4,7 +4,7 @@ An AI-powered job application platform built for international workers who need 
 
 The system continuously scrapes US companies, filters for sponsorship-friendly roles, enriches jobs with AI-extracted structured fields, scores matches per user, and (eventually) tailors resumes per application — without ever fabricating content.
 
-**Status:** Beta in development. Currently 1,337 real US jobs from 17 companies in DB, with AI enrichment running autonomously on daily cron.
+**Status:** Beta in development. Currently 1,581 real US jobs from ~30 companies in DB, with full first-time onboarding pipeline live, AI enrichment running autonomously on daily cron, and a per-user matcher that closes the iteration loop in real time (change keywords → matcher re-runs synchronously → dashboard updates).
 
 ---
 
@@ -20,30 +20,33 @@ For the full vision, see [`VISION.md`](./VISION.md).
 
 ## What's built
 
-| Layer                                                           | Status         |
-| --------------------------------------------------------------- | -------------- |
-| Authentication (email + magic link, Supabase)                   | ✅             |
-| User preferences (keywords, locations, experience, sponsorship) | ✅             |
-| Greenhouse scraper (16 companies)                               | ✅             |
-| Ashby scraper (8 companies)                                     | ✅             |
-| US-only filter + owner rule engine                              | ✅             |
-| 14-day dedup + 30-day TTL                                       | ✅             |
-| Daily cleanup script (user-driven garbage collection)           | ✅             |
-| GitHub Actions cron (daily 04:00 PT, autonomous)                | ✅             |
-| Per-job parsing (resilient to schema variations)                | ✅             |
-| AI enrichment (Groq-powered, provider-agnostic interface)       | ✅             |
-| Per-user matcher + dashboard                                    | 🔜 next        |
-| Resume tailoring                                                | 🔜             |
-| Application auto-fill                                           | 🔜 (post-beta) |
+| Layer                                                                     | Status         |
+| ------------------------------------------------------------------------- | -------------- |
+| Authentication (email + magic link, Supabase)                             | ✅             |
+| User preferences (keywords, locations, experience, sponsorship)           | ✅             |
+| Greenhouse scraper (16 companies)                                         | ✅             |
+| Ashby scraper (8 companies)                                               | ✅             |
+| US-only filter + owner rule engine                                        | ✅             |
+| 14-day dedup + 30-day TTL                                                 | ✅             |
+| Daily cleanup script (user-driven garbage collection)                     | ✅             |
+| GitHub Actions cron (daily 04:00 PT, autonomous)                          | ✅             |
+| Per-job parsing (resilient to schema variations)                          | ✅             |
+| AI enrichment (Groq-powered, provider-agnostic interface)                 | ✅             |
+| Per-user matcher + dashboard (content-addressed cache)                    | ✅             |
+| First-time onboarding pipeline (welcome → profile → resume → preferences) | ✅             |
+| Country picker + DOCX upload + strict routing guards                      | ✅             |
+| Synchronous matcher re-run on save (real-time iteration loop)             | ✅             |
+| Resume tailoring (Phase 2G — full spec in CONTEXT.md)                     | 🔜             |
+| Application auto-fill                                                     | 🔜 (post-beta) |
 
 ---
 
 ## Stack
 
 **Frontend:** Next.js 16 (App Router) · TypeScript 5 · Tailwind v4 · shadcn/ui · Framer Motion
-**Backend:** Node.js 22 · Prisma 7 · Supabase Postgres · Supabase Auth · Zod · Pino
+**Backend:** Node.js 22 · Prisma 7 · Supabase Postgres · Supabase Auth · Zod · Pino · unpdf (PDF extraction) · mammoth (DOCX extraction)
 **Observability:** Sentry · PostHog
-**AI:** Groq free tier (`llama-3.3-70b-versatile`) for beta enrichment · Claude API later for resume tailoring · provider-agnostic interface so swaps are one file
+**AI:** Groq free tier across two models — `llama-3.1-8b-instant` for high-volume job enrichment (500k TPD), `llama-3.3-70b-versatile` for resume parsing + match reasons (100k TPD). Cerebras planned as second free-tier provider for resume tailoring (Phase 2G). Provider-agnostic interface so swaps are one file. **Free-tier-only is a locked decision — paying a penny is the defeat condition.**
 **Hosting:** Vercel (after Phase 2E) · GitHub Actions for cron
 
 All beta-tier free. Estimated $0/month through public launch.
@@ -141,7 +144,7 @@ Output is a Pino-structured log plus a summary table. See [`docs/runbooks/cron.m
 **Logs:** Pino → Sentry on errors, PostHog for events.
 **DB:** Supabase Postgres, us-east-1 region, free tier (500 MB cap).
 **Daily storage growth:** ~30 new jobs/day at current scrape volume. Comfortable until ~Phase 3+.
-**Enrichment throughput:** ~1,000 jobs/day on Groq free tier (`llama-3.3-70b-versatile`: 30 RPM / 6,000 TPM / 1,000 RPD). Backfill of large pools spreads over multiple days via idempotency.
+**Enrichment throughput:** ~120-150 jobs/day on Groq free tier. Enrichment uses `llama-3.1-8b-instant` (14,400 RPD / 30,000 TPM / 500,000 TPD — chosen over 70b for 5× higher daily token budget). Resume parsing + match reasons use `llama-3.3-70b-versatile` (100,000 TPD). Backfill of large pools spreads over multiple days via versioned idempotency.
 
 To manually trigger the cron (from GitHub UI): **Actions → Daily scrape + cleanup → Run workflow**.
 
