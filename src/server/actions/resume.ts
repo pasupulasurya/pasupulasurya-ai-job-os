@@ -108,6 +108,13 @@ async function extractText(file: File): Promise<string> {
     const { text } = await unpdfExtract(new Uint8Array(buffer), { mergePages: true });
     return text;
   }
-  // DOCX path is intentionally deferred: requires mammoth or similar.
-  throw new Error("DOCX extraction not yet implemented in this build");
+  if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    // Mammoth extracts the raw text content from a .docx file's XML structure.
+    // We deliberately discard the HTML formatting output and use rawText only —
+    // downstream the LLM parser works from plain text, not from formatting hints.
+    const mammoth = await import("mammoth");
+    const result = await mammoth.extractRawText({ buffer });
+    return result.value;
+  }
+  throw new Error(`Unsupported file type for extraction: ${file.type}`);
 }

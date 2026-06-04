@@ -39,8 +39,8 @@ export const ResumeParseSchema = z.object({
   workHistory: z
     .array(
       z.object({
-        company: z.string().max(160),
-        title: z.string().max(160),
+        company: z.string().max(160).nullable(),
+        title: z.string().max(160).nullable(),
         startDate: z.string().max(40).nullable(),
         endDate: z.string().max(40).nullable(),
         bullets: z.array(z.string().max(400)).max(MAX_BULLETS_PER_ROLE),

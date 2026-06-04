@@ -12,7 +12,10 @@ import { uploadMasterResumeAction } from "@/server/actions/resume";
 import { spring } from "@/styles/tokens";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
-const ALLOWED_TYPES = new Set(["application/pdf"]);
+const ALLOWED_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
 
 type UploadState =
   | { kind: "idle" }
@@ -31,7 +34,7 @@ export function ResumeUploadForm({ existingFileName }: { existingFileName: strin
   function validateFile(file: File): string | null {
     if (file.size > MAX_FILE_BYTES) return "File too large (max 5 MB)";
     if (!ALLOWED_TYPES.has(file.type)) {
-      return "PDF files only for now. DOCX support coming soon.";
+      return "Unsupported file type. PDF or DOCX only.";
     }
     return null;
   }
@@ -131,11 +134,13 @@ export function ResumeUploadForm({ existingFileName }: { existingFileName: strin
                 <p className="text-text-primary text-sm font-medium">
                   {isDragging ? "Release to upload" : "Drop your resume here"}
                 </p>
-                <p className="text-text-tertiary text-xs">or click to browse · PDF, max 5 MB</p>
+                <p className="text-text-tertiary text-xs">
+                  or click to browse · PDF or DOCX, max 5 MB
+                </p>
                 <input
                   ref={inputRef}
                   type="file"
-                  accept="application/pdf"
+                  accept="application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.pdf,.docx"
                   onChange={handleFileInput}
                   className="hidden"
                 />
