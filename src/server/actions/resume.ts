@@ -4,8 +4,15 @@ import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { parseResume, RESUME_PARSE_VERSION } from "@/server/services/ai/parse-resume";
+import { matchJobsForUser } from "@/server/services/matcher/match";
 
-type ActionResult = { error: string } | { success: true; resumeId: string };
+type ActionResult =
+  | { error: string }
+  | {
+      success: true;
+      resumeId: string;
+      matchSummary?: { jobsConsidered: number; upserted: number; scoredAbove: number };
+    };
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_MIME = new Set([
@@ -97,7 +104,27 @@ export async function uploadMasterResumeAction(formData: FormData): Promise<Acti
     logger.info({ userId: appUser.id, newMasterId: result.newId }, "resume.master.created");
   }
 
-  return { success: true, resumeId: result.newId };
+  // Trigger re-match after resume upload. The new master's resumeId + parseVersion
+  // are part of the matchVersion hash, so all existing matches become stale-version
+  // and get re-scored against the new skills. Failures do NOT fail the upload —
+  // resume is persisted, daily cron will re-run matcher tomorrow if needed.
+  let matchSummary: { jobsConsidered: number; upserted: number; scoredAbove: number } | undefined;
+  try {
+    const summary = await matchJobsForUser({ userId: appUser.id, force: true });
+    matchSummary = {
+      jobsConsidered: summary.jobsConsidered,
+      upserted: summary.upserted,
+      scoredAbove: summary.scoredAbove,
+    };
+    logger.info({ userId: appUser.id, ...matchSummary }, "resume.upload.matcher_completed");
+  } catch (err) {
+    logger.error(
+      { userId: appUser.id, err: (err as Error).message },
+      "resume.upload.matcher_failed",
+    );
+  }
+
+  return { success: true, resumeId: result.newId, matchSummary };
 }
 
 async function extractText(file: File): Promise<string> {

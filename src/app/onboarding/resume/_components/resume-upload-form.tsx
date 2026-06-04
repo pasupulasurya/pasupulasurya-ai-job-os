@@ -157,7 +157,7 @@ export function ResumeUploadForm({ existingFileName }: { existingFileName: strin
               className="border-border bg-card flex flex-col items-center justify-center gap-3 rounded-xl border p-12 text-center"
             >
               <Loader2 className="text-accent h-6 w-6 animate-spin" />
-              <p className="text-text-primary text-sm font-medium">Parsing your resume…</p>
+              <p className="text-text-primary text-sm font-medium">Parsing and matching jobs…</p>
               <p className="text-text-tertiary text-xs">{state.fileName}</p>
             </motion.div>
           )}

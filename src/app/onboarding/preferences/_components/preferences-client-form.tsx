@@ -2,11 +2,10 @@
 
 import { useState, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { OnboardingProgress } from "@/components/onboarding/progress";
 import { AuthBanner } from "@/components/auth/auth-banner";
-import { SubmitButton } from "@/components/auth/submit-button";
 import { ChipInput } from "@/components/onboarding/chip-input";
 import { ExperienceRange } from "@/components/onboarding/experience-range";
 import { JobTypeSelect } from "@/components/onboarding/job-type-select";
@@ -37,7 +36,7 @@ export function PreferencesClientForm({
   const [stemOptOnly, setStemOptOnly] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   // Filter suggestions: hide chips already added to keywords (case-insensitive).
   const lowerKeywords = new Set(keywords.map((k) => k.toLowerCase()));
@@ -214,7 +213,16 @@ export function PreferencesClientForm({
           />
         </motion.div>
 
-        <SubmitButton>Save and continue</SubmitButton>
+        <motion.button
+          type="submit"
+          disabled={isPending}
+          whileTap={{ scale: isPending ? 1 : 0.98 }}
+          transition={spring.snappy}
+          className="bg-accent text-accent-foreground hover:bg-accent-hover active:bg-accent-pressed flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+          {isPending ? "Saving and re-matching jobs…" : "Save and continue"}
+        </motion.button>
       </form>
     </AuthShell>
   );

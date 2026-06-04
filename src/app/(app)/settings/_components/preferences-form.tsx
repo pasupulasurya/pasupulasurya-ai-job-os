@@ -97,6 +97,11 @@ export function PreferencesForm({
 
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [matchSummary, setMatchSummary] = useState<{
+    jobsConsidered: number;
+    upserted: number;
+    scoredAbove: number;
+  } | null>(null);
   const [savedSnapshot, setSavedSnapshot] = useState<PreferencesFormValues>(initialValues);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
@@ -145,6 +150,7 @@ export function PreferencesForm({
     event.preventDefault();
     setError(null);
     setSavedAt(null);
+    setMatchSummary(null);
 
     const input = {
       keywords,
@@ -176,6 +182,9 @@ export function PreferencesForm({
         setError(result.error);
       } else {
         setSavedAt(Date.now());
+        if ("matchSummary" in result && result.matchSummary) {
+          setMatchSummary(result.matchSummary);
+        }
         setSavedSnapshot({
           keywords,
           excludeKeywords,
@@ -372,7 +381,9 @@ export function PreferencesForm({
               transition={spring.snappy}
               className="text-text-secondary text-sm"
             >
-              Saved.
+              {matchSummary
+                ? `Saved. Re-scored ${matchSummary.jobsConsidered} jobs · ${matchSummary.scoredAbove} above threshold.`
+                : "Saved."}
             </motion.p>
           )}
           {!error && !savedAt && (
@@ -398,7 +409,7 @@ export function PreferencesForm({
           className="bg-accent text-accent-foreground hover:bg-accent-hover w-full rounded-md px-6 py-3 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 md:w-auto md:py-2.5"
         >
           {isPending
-            ? "Saving…"
+            ? "Saving and re-matching jobs…"
             : dirtyFieldCount > 0
               ? `Save changes (${dirtyFieldCount})`
               : "Save changes"}

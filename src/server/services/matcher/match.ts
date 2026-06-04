@@ -4,6 +4,7 @@
 // loads all eligible jobs, filters + scores each pair, upserts UserJobMatch.
 // Idempotent via MATCH_VERSION.
 
+import { createHash } from "node:crypto";
 import { prisma } from "@/server/lib/prisma";
 import { logger } from "@/server/lib/logger";
 import { ResumeParseSchema, type ResumeParse } from "@/server/services/ai/parse-resume";
@@ -11,6 +12,58 @@ import { applyAllFilters } from "./filters";
 import { composeScore, type MatchableJob, type MatchableUser } from "./score";
 
 export const MATCH_VERSION = "matcher-v1";
+
+/**
+ * Compute the full match-version string for a (preferences, resume) pair.
+ *
+ * Returns `matcher-v1:${hash}` where the hash captures every field that
+ * affects the scoring or filtering outcome. When ANY of these inputs change,
+ * the hash changes, all of that user's existing matches become stale-version,
+ * and the matcher re-scores them on the next run.
+ *
+ * This is the real correctness mechanism: idempotency is preserved when
+ * inputs are stable, invalidation is automatic when inputs change. No manual
+ * backfill needed — the matcher self-heals.
+ *
+ * Inputs hashed (any change invalidates):
+ *   - All UserPreference fields that the matcher reads (keywords, targetRoles,
+ *     locations, jobTypes, experienceMin/Max, visaSponsorship, stemOptOnly,
+ *     salaryMin, currentEmployment, workAuthStatus, visaType, excludeKeywords,
+ *     avoidCompanies)
+ *   - Master resume id (resume swap -> different parsed skills -> new score)
+ *   - Master resume parseVersion (parser upgrade -> different skills -> new score)
+ */
+type HashInput = {
+  keywords: string[];
+  excludeKeywords: string[];
+  targetRoles: string[];
+  locations: string[];
+  jobTypes: string[];
+  experienceMin: number | null;
+  experienceMax: number | null;
+  visaSponsorship: boolean;
+  stemOptOnly: boolean;
+  visaType: string | null;
+  workAuthStatus: string | null;
+  salaryMin: number | null;
+  currentEmployment: string | null;
+  avoidCompanies: string[];
+  resumeId: string;
+  parseVersion: string | null;
+};
+
+function stableSerialize(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(stableSerialize).join(",") + "]";
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj).sort();
+  return "{" + keys.map((k) => JSON.stringify(k) + ":" + stableSerialize(obj[k])).join(",") + "}";
+}
+
+export function computeMatchVersion(input: HashInput): string {
+  const hash = createHash("sha256").update(stableSerialize(input)).digest("hex").slice(0, 12);
+  return `${MATCH_VERSION}:${hash}`;
+}
 
 const MIN_SCORE_TO_PERSIST = 40; // 30/100. Below this we don't upsert (keeps list clean).
 
@@ -74,6 +127,28 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
     avoidCompanies: user.preferences.avoidCompanies,
   };
 
+  // Compute the per-user match version. See computeMatchVersion docstring.
+  // When prefs or resume change, this hash changes, and the skip-if-exists
+  // logic below correctly re-scores all jobs.
+  const matchVersion = computeMatchVersion({
+    keywords: user.preferences.keywords,
+    excludeKeywords: user.preferences.excludeKeywords,
+    targetRoles: user.preferences.targetRoles,
+    locations: user.preferences.locations,
+    jobTypes: user.preferences.jobTypes,
+    experienceMin: user.preferences.experienceMin,
+    experienceMax: user.preferences.experienceMax,
+    visaSponsorship: user.preferences.visaSponsorship,
+    stemOptOnly: user.preferences.stemOptOnly,
+    visaType: user.preferences.visaType,
+    workAuthStatus: user.preferences.workAuthStatus,
+    salaryMin: user.preferences.salaryMin,
+    currentEmployment: user.preferences.currentEmployment,
+    avoidCompanies: user.preferences.avoidCompanies,
+    resumeId: masterResume.id,
+    parseVersion: masterResume.parseVersion,
+  });
+
   const blockedCompanyNames = new Set(
     user.blockedCompanies.map((b) => b.company.name.toLowerCase()),
   );
@@ -91,7 +166,7 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
   });
 
   logger.info(
-    { userId, jobsCount: jobs.length, force, dryRun, version: MATCH_VERSION },
+    { userId, jobsCount: jobs.length, force, dryRun, version: matchVersion },
     "matcher.run.start",
   );
 
@@ -111,7 +186,7 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
     : new Map(
         (
           await prisma.userJobMatch.findMany({
-            where: { userId, matchVersion: MATCH_VERSION },
+            where: { userId, matchVersion: matchVersion },
             select: { jobId: true, matchVersion: true },
           })
         ).map((m) => [m.jobId, m.matchVersion]),
@@ -167,13 +242,13 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
             jobId: job.id,
             matchScore: totalScore,
             scoreBreakdown: breakdown,
-            matchVersion: MATCH_VERSION,
+            matchVersion: matchVersion,
             status: "fresh",
           },
           update: {
             matchScore: totalScore,
             scoreBreakdown: breakdown,
-            matchVersion: MATCH_VERSION,
+            matchVersion: matchVersion,
             // do NOT reset status: a user who already "viewed" or "applied" keeps that state
           },
         });
@@ -189,7 +264,7 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
     userId,
     ...counters,
     durationMs: Date.now() - startedAt,
-    version: MATCH_VERSION,
+    version: matchVersion,
   };
   logger.info(summary, "matcher.run.complete");
   return summary;
