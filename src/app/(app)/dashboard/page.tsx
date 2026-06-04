@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/server/lib/prisma";
+import { getNextOnboardingStep } from "@/server/lib/onboarding";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { EmptyState } from "./_components/empty-state";
@@ -28,34 +29,16 @@ export default async function DashboardPage() {
     redirect("/login");
   }
 
-  const hasMasterResume = appUser.resumes.length > 0 && appUser.resumes[0].parsedJson !== null;
-  const hasPreferences = appUser.preferences !== null && appUser.preferences.keywords.length > 0;
-
-  // Routing state machine — but inline rather than separate routes for today.
-  // 2E.3.B will refactor into proper /onboarding/resume + /onboarding/preferences flow.
-
-  if (!hasMasterResume) {
-    return (
-      <main className="min-h-screen bg-black px-6 py-16 text-white">
-        <div className="mx-auto max-w-3xl">
-          <h1 className="mb-3 text-3xl font-medium tracking-tight">Welcome.</h1>
-          <p className="mb-8 text-white/60">
-            Upload your resume to begin. We&apos;ll read it once, then match you against new jobs
-            every day.
-          </p>
-          <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-            <p className="mb-4 text-sm text-white/60">
-              Resume upload UI ships in the next iteration. For now, please contact the team to seed
-              your master resume manually.
-            </p>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  if (!hasPreferences) {
-    redirect("/onboarding/preferences");
+  // Onboarding gate: redirect to whichever step is incomplete, in strict order.
+  // Profile -> Resume -> Preferences. Centralized in @/server/lib/onboarding.
+  const nextStep = getNextOnboardingStep({
+    firstName: appUser.firstName,
+    lastName: appUser.lastName,
+    masterResumeExists: appUser.resumes.length > 0 && appUser.resumes[0].parsedJson !== null,
+    preferenceKeywordsCount: appUser.preferences?.keywords.length ?? 0,
+  });
+  if (nextStep !== null) {
+    redirect(nextStep);
   }
 
   const matches = await prisma.userJobMatch.findMany({

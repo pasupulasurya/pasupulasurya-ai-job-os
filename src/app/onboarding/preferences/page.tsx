@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
+import { canAccessStep } from "@/server/lib/onboarding";
 import { PreferencesClientForm } from "./_components/preferences-client-form";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,15 @@ export default async function OnboardingPreferencesPage() {
     logger.error({ authId: authUser.id }, "onboarding_prefs.user_not_found");
     redirect("/login");
   }
+
+  // Prior-step guard: profile + resume must both be complete before preferences.
+  const access = canAccessStep("/onboarding/preferences", {
+    firstName: appUser.firstName,
+    lastName: appUser.lastName,
+    masterResumeExists: appUser.resumes.length > 0 && appUser.resumes[0].parsedJson !== null,
+    preferenceKeywordsCount: 0,
+  });
+  if (!access.allowed) redirect(access.redirectTo);
 
   // Surface resume-extracted skills as suggested chips above the Keywords input.
   // Same defensive narrowing pattern as settings page.
