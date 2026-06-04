@@ -17,6 +17,7 @@ model User {
   email         String    @unique
   firstName     String
   lastName      String
+  country       String?
   phone         String?   // E.164 format e.g. "+12025551234"
   role          String    @default("user") // user | admin
   createdAt     DateTime  @default(now())

@@ -4,6 +4,8 @@ import { useState, useTransition } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Pencil, X } from "lucide-react";
 import { AuthBanner } from "@/components/auth/auth-banner";
+import { CountryPicker } from "@/components/onboarding/country-picker";
+import { DEFAULT_COUNTRY_CODE, findCountry } from "@/shared/data/countries";
 import { profileSchema } from "@/shared/schemas/profile";
 import { saveProfileAction } from "@/server/actions/profile";
 import { spring } from "@/styles/tokens";
@@ -13,6 +15,7 @@ type Props = {
     firstName: string;
     lastName: string;
     phone: string;
+    country: string | null;
   };
 };
 
@@ -22,6 +25,7 @@ export function PersonalInfoSection({ initialValues }: Props) {
   const [firstName, setFirstName] = useState(initialValues.firstName);
   const [lastName, setLastName] = useState(initialValues.lastName);
   const [phone, setPhone] = useState(initialValues.phone);
+  const [country, setCountry] = useState(initialValues.country ?? DEFAULT_COUNTRY_CODE);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -30,6 +34,7 @@ export function PersonalInfoSection({ initialValues }: Props) {
     setFirstName(saved.firstName);
     setLastName(saved.lastName);
     setPhone(saved.phone);
+    setCountry(saved.country ?? DEFAULT_COUNTRY_CODE);
     setMode("edit");
   }
 
@@ -40,7 +45,7 @@ export function PersonalInfoSection({ initialValues }: Props) {
 
   function handleSave() {
     setError(null);
-    const input = { firstName, lastName, phone };
+    const input = { firstName, lastName, phone, country };
     const parsed = profileSchema.safeParse(input);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Check your inputs");
@@ -57,6 +62,7 @@ export function PersonalInfoSection({ initialValues }: Props) {
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
         phone: normalizedPhone,
+        country: parsed.data.country,
       });
       setMode("view");
     });
@@ -95,6 +101,21 @@ export function PersonalInfoSection({ initialValues }: Props) {
                 <dd className="text-text-primary text-right">
                   {saved.firstName || saved.lastName ? (
                     `${saved.firstName} ${saved.lastName}`.trim()
+                  ) : (
+                    <span className="text-text-tertiary">Not set</span>
+                  )}
+                </dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-text-tertiary">Country</dt>
+                <dd className="text-text-primary text-right">
+                  {saved.country ? (
+                    <span>
+                      {findCountry(saved.country)?.name ?? saved.country}
+                      <span className="text-text-tertiary ml-2 text-xs tabular-nums">
+                        {findCountry(saved.country)?.dial}
+                      </span>
+                    </span>
                   ) : (
                     <span className="text-text-tertiary">Not set</span>
                   )}
@@ -159,17 +180,20 @@ export function PersonalInfoSection({ initialValues }: Props) {
                 >
                   Phone
                 </label>
-                <input
-                  id="settings-phone"
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="2025551234 or +12025551234"
-                  autoComplete="tel"
-                  className="bg-card border-border focus-within:border-accent focus-within:ring-accent/20 text-text-primary placeholder:text-text-tertiary w-full rounded-md border px-3 py-2 text-sm transition-all outline-none focus-within:ring-2"
-                />
+                <div className="flex">
+                  <CountryPicker value={country} onChange={setCountry} />
+                  <input
+                    id="settings-phone"
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="2025551234"
+                    autoComplete="tel-national"
+                    className="bg-card border-border focus-within:border-accent focus-within:ring-accent/20 text-text-primary placeholder:text-text-tertiary flex-1 rounded-r-md border px-3 py-2 text-sm transition-all outline-none focus-within:ring-2"
+                  />
+                </div>
                 <p className="text-text-tertiary text-xs">
-                  Leave blank to clear. US default if no country code.
+                  Leave phone blank to clear. Select country first, then enter the local number.
                 </p>
               </div>
 

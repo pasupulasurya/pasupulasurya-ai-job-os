@@ -45,12 +45,13 @@ export async function saveProfileAction(input: unknown): Promise<ActionResult> {
       data: {
         firstName: parsed.data.firstName,
         lastName: parsed.data.lastName,
+        country: parsed.data.country,
         phone: parsed.data.phone,
       },
     });
 
     logger.info(
-      { userId: appUser.id, hasPhone: parsed.data.phone !== null },
+      { userId: appUser.id, hasPhone: parsed.data.phone !== null, country: parsed.data.country },
       "profile.save.success",
     );
 

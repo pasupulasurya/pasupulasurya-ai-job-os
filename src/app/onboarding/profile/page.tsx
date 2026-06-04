@@ -15,7 +15,7 @@ export default async function OnboardingProfilePage() {
 
   const appUser = await prisma.user.findUnique({
     where: { authId: authUser.id },
-    select: { firstName: true, lastName: true, phone: true },
+    select: { firstName: true, lastName: true, phone: true, country: true },
   });
   if (!appUser) {
     logger.error({ authId: authUser.id }, "onboarding_profile.user_not_found");
@@ -28,6 +28,7 @@ export default async function OnboardingProfilePage() {
         firstName: appUser.firstName ?? "",
         lastName: appUser.lastName ?? "",
         phone: appUser.phone ?? "",
+        country: appUser.country,
       }}
     />
   );

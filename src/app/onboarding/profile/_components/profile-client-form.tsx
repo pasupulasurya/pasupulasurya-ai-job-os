@@ -7,6 +7,8 @@ import { Loader2 } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { OnboardingProgress } from "@/components/onboarding/progress";
 import { AuthBanner } from "@/components/auth/auth-banner";
+import { CountryPicker } from "@/components/onboarding/country-picker";
+import { DEFAULT_COUNTRY_CODE } from "@/shared/data/countries";
 import { profileSchema } from "@/shared/schemas/profile";
 import { saveProfileAction } from "@/server/actions/profile";
 import { spring } from "@/styles/tokens";
@@ -16,6 +18,7 @@ type Props = {
     firstName: string;
     lastName: string;
     phone: string;
+    country: string | null;
   };
 };
 
@@ -24,6 +27,7 @@ export function ProfileClientForm({ initialValues }: Props) {
   const [firstName, setFirstName] = useState(initialValues.firstName);
   const [lastName, setLastName] = useState(initialValues.lastName);
   const [phone, setPhone] = useState(initialValues.phone);
+  const [country, setCountry] = useState(initialValues.country ?? DEFAULT_COUNTRY_CODE);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -31,7 +35,7 @@ export function ProfileClientForm({ initialValues }: Props) {
     event.preventDefault();
     setError(null);
 
-    const input = { firstName, lastName, phone };
+    const input = { firstName, lastName, phone, country };
     const parsed = profileSchema.safeParse(input);
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Check your inputs");
@@ -100,17 +104,20 @@ export function ProfileClientForm({ initialValues }: Props) {
           >
             Phone (optional)
           </label>
-          <input
-            id="phone"
-            type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="2025551234 or +12025551234"
-            autoComplete="tel"
-            className="bg-card border-border focus-within:border-accent focus-within:ring-accent/20 text-text-primary placeholder:text-text-tertiary w-full rounded-md border px-3 py-2 text-sm transition-all outline-none focus-within:ring-2"
-          />
+          <div className="flex">
+            <CountryPicker value={country} onChange={setCountry} />
+            <input
+              id="phone"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="2025551234"
+              autoComplete="tel-national"
+              className="bg-card border-border focus-within:border-accent focus-within:ring-accent/20 text-text-primary placeholder:text-text-tertiary flex-1 rounded-r-md border px-3 py-2 text-sm transition-all outline-none focus-within:ring-2"
+            />
+          </div>
           <p className="text-text-tertiary text-xs">
-            Used for notifications later. We default to US if no country code.
+            Used for notifications later. Select your country, then enter the local number.
           </p>
         </div>
 

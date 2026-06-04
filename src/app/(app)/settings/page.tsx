@@ -109,6 +109,7 @@ export default async function SettingsPage() {
             firstName: appUser.firstName ?? "",
             lastName: appUser.lastName ?? "",
             phone: appUser.phone ?? "",
+            country: appUser.country,
           }}
         />
 
