@@ -385,9 +385,15 @@ Real iteration loop closed.
 
 ### Phase 2F — Vercel deploy (~3-4h)
 
-**Only remaining blocker before deploy: v3 enrichment backfill completion** (810 NULL jobs working through cron at ~120/day; expected complete approximately Friday June 5).
+**Two real blockers before deploy (both must clear, neither is "monitoring"):**
 
-Real deploy work:
+1. **v3 enrichment backfill COMPLETE.** All active jobs must be at `groq-llama-3.1-8b-v3`. Today: 770 v3 / 1 v2 / 810 NULL. Realistic ETA: ~6-10 days at the actual cron throughput (~47-365/day, highly variable due to Groq rate-limit aborts). NOT acceptable to deploy with NULLs — the matcher silently excludes them and users get a degraded, non-transparent view of available jobs. See Drift Pattern #7 in Section 12.
+
+2. **v3 enrichment quality bug fixed.** v3 still hallucinates skills on technical-leaning non-technical titles. Caught Wed evening: "Accounting Technical Solutions Lead @ Stripe" got `skills: [artificial intelligence, ai, accounting]` from v3. This is the v2 problem v3 was supposed to eliminate. Real fix needed before deploy — either v4 prompt iteration OR a post-enrichment validation pass that flags suspicious skill-vs-title pairs. Same Tuesday lesson applies: when the LLM keeps producing bad output, do less in the prompt and more in code (e.g., context-aware skill blocklist).
+
+Throughput problem to investigate as part of #1: Groq returns 429 after ~50 calls in 8 minutes despite math suggesting we're well below TPM/TPD. May need to split the cron into multiple smaller batches spread across the 24h window OR investigate actual Groq free-tier behavior with curl + raw headers.
+
+Real deploy work (only relevant AFTER 1 and 2 are green):
 
 - env var migration to Vercel
 - edge vs node runtime decisions (Server Actions are node; Server Components likely edge-safe)
@@ -569,26 +575,50 @@ Phase 2E.5 is now **COMPLETE for pre-deploy bar.** Only fuzzy-matching whitelist
 
 ### Thursday plan
 
-The only remaining priority before deploy is the v3 enrichment backfill. Then Phase 2F (Vercel deploy) becomes the next session's milestone.
+Phase 2F (Vercel deploy) is NOT yet open. Two real blockers must clear first, both shipped to the bar. See Section 6 Phase 2F for the full gating rationale and Section 12 Drift Pattern #7 for why "deploy with NULLs pending" is a bar drop.
 
-**Priorities for next session:**
+**Priorities for next session (in strict order — do not skip):**
 
-1. **Verify v3 enrichment backfill progress** (~5 min diagnostic) — Run an ad-hoc Prisma `groupBy({ by: ["enrichmentVersion"] })` to see v2 / v3 / NULL counts. Target: backfill complete by Friday June 5. Today's state: 770 v3, 1 v2, 810 NULL.
+1. **Investigate + fix Groq rate-limit throughput problem** (~2-3h diagnostic + fix).
+   - Test with curl: `curl -v https://api.groq.com/openai/v1/chat/completions ... -H "Authorization: Bearer $GROQ_API_KEY"` against a single enrichment call. Read the response headers (`x-ratelimit-*`, `retry-after`). Find out the actual limit being hit (TPM? TPD? RPD? Per-second?). Document the real numbers in CONTEXT.md.
+   - Based on actual limit, design a throughput fix. Options to evaluate against the bar:
+     - Split daily-enrich.yml into N smaller cron triggers spread across 24h
+     - Add a budget-aware `--max-tokens-per-run` flag to enrich.ts
+     - Move enrichment to a different model with higher headroom (only if it still honors free-tier-only AND quality is equal or better — DO NOT compromise quality for throughput)
+   - Success criterion: backfill rate of >=500 jobs/day sustained, with the cron running cleanly to completion (no 429 aborts).
 
-2. **Phase 2F — Vercel deploy** (~3-4h) — Once backfill is done:
+2. **Fix v3 enrichment quality on technical-leaning non-tech titles** (~2-3h).
+   - The bug: "Accounting Technical Solutions Lead" got `skills: [artificial intelligence, ai, accounting]`. The LLM is using the word "Technical" in the title to assume the role is technical and hallucinate AI skills.
+   - Real candidates (decide against the bar):
+     - v4 prompt iteration that explicitly disambiguates "Technical Solutions" / "Sales Engineer" / "AI Account Executive" patterns — but Tuesday's lesson is that prompt tightening over-prunes real signal.
+     - Post-enrichment validation pass: if the role title clearly indicates a non-tech function (Accounting, Sales, Recruiter, Legal, etc.) AND the LLM returned generic-sounding AI skills, drop those skills. Code-side filter, same architectural pattern as SKILL_BLOCKLIST.
+     - Tighter Zod schema: require evidence in the description for any skill claim. Probably too strict, would reject too much.
+   - Success criterion: A spot-check of 20 non-technical roles (Accounting, Sales, Recruiter, Legal, Operations, Customer Success) returns `skills: []` for at least 18 of them.
+
+3. **Re-run full v3 backfill end-to-end ONCE both #1 and #2 are shipped.**
+   - Bump ENRICHMENT_VERSION to v4 (so all existing v3 jobs get re-scored under the corrected quality pass + faster throughput)
+   - OR: keep v3 and run `enrich --force` once if the quality fix is code-side post-validation
+   - Watch the cron complete. Verify backfill goes from 770 v3 + 1 v2 + 810 NULL to ~1581 at the current version, zero NULLs, zero stragglers.
+
+4. **THEN Phase 2F — Vercel deploy** (~3-4h).
    - Env var migration to Vercel project settings (DATABASE_URL, DIRECT_URL, all Supabase keys, Sentry DSN, PostHog key, GROQ_API_KEY, Resend keys)
-   - Verify Server Actions work on Vercel (they're node runtime by default, should be fine)
+   - Verify Server Actions work on Vercel (node runtime by default)
    - Check upload limits — 5 MB resume upload + body size on Vercel free tier
    - Set up Supabase auth callback URL for production domain
    - Configure Resend SMTP for production emails
    - Deploy a preview branch first, smoke-test the full onboarding flow + dashboard, then promote to production
    - Update README + CONTEXT with the live URL
 
-3. **Polish items if Phase 2F isn't ready** (~1-2h each, defensive ground):
-   - Resume re-upload from /settings (currently read-only there; the action exists, just not wired)
-   - Loading skeletons + error boundaries at dashboard polish level
-   - Accessibility pass (ARIA, keyboard nav, focus management)
-   - Keyboard shortcuts on dashboard (j/k navigation, a/d for apply/dismiss)
+**If items 1-3 take longer than expected:** do not move on to Phase 2F early. The bar is "complete + correct," not "good enough to deploy and patch later." See Drift Pattern #7.
+
+**Defensive ground if items 1-3 hit a wall:**
+
+- Resume re-upload from /settings (currently read-only there; the action exists, just not wired)
+- Loading skeletons + error boundaries at dashboard polish level
+- Accessibility pass (ARIA, keyboard nav, focus management)
+- Keyboard shortcuts on dashboard (j/k navigation, a/d for apply/dismiss)
+
+These don't unblock deploy but are real polish work the bar deserves.
 
 **Not on critical path until Phase 2F lands:**
 
@@ -615,3 +645,97 @@ Wednesday (long, 6 commits, ended with the matcher fix): three of the six were s
 5. **Timestamp accuracy matters for trust.** When agent guesses wall-clock from message timing and gets it wrong, it creates false urgency. Rule: agent does not state wall-clock; user provides it when needed.
 6. **Audit the core product loop yourself, periodically — don't just work through queued features.** The matcher cache bug survived months because nobody ran the system end-to-end as a real user iterating. Section 11 priorities are a queue, not a quality bar. Working through the queue while the central product loop is broken is a real failure mode. Periodic system-level audit ("does the dashboard actually update when I change keywords?") is required, not optional.
 7. **When user flags a symptom, don't accept the first fix that occurs. Run it against the bar twice.** Tonight: agent's first proposal was "drop the skip-if-exists logic, always re-score." User pushed back with "rethink twice — is this the real fix per the bar?" Second analysis pass surfaced the actual correctness mechanism (content-addressed matchVersion via input hash) — preserves idempotency, fixes invalidation, self-heals. Lazy fix vs Stripe-grade fix. User pushback forced the second pass and the better outcome.
+
+---
+
+## 12. AGENT DRIFT PATTERNS (read before planning anything)
+
+This section exists because the agent (Claude) repeatedly drifted in measurable ways during the 2026-06-03 session, and the user had to catch each one. The patterns below are real and named. Tomorrow's session must read them before proposing any plan, ship, or "honest call."
+
+**The meta-rule:** If you (the agent) catch yourself making one of these moves, STOP. Re-read the bar in Section 1. Re-state the recommendation against the bar, not against the calendar. Acknowledge the drift to the user.
+
+### Drift #1 — Budget-over-bar framing
+
+**The pattern:** Agent frames decisions around "fits the time budget" instead of "matches the bar." Triggers when the agent says things like "this is a 1h ship," "stop here, X is a good day," "deploy can happen anytime starting tomorrow," "the smaller scope is the right call."
+
+**Why it's wrong:** Budget is a guardrail against bad decisions, not the criterion for which decision is right. The bar in Section 1 is the criterion: Apple-grade UI, Stripe-grade backend, never fabricate, system stays correct under partial failure, free tier only.
+
+**When the user catches you:** They will say "remember the bar not the time" or "you keep coming back to budget." If they say this even once, the agent has already drifted. Apologize, re-frame the same decision against the bar, and proceed only after the user confirms the new framing.
+
+**Example from 2026-06-03:** Multiple ships during the day were framed as "fits the 3-hour budget." User caught it repeatedly. The right framing was always "matches the bar" — never "fits the time."
+
+### Drift #2 — Lazy-first-proposal
+
+**The pattern:** When user flags a problem, agent's first proposed fix is the cheap/simple one, not the architecturally correct one. Triggers when the agent proposes a fix in the first 1-2 messages after the user surfaces a bug, without rigorously checking it against the bar.
+
+**Why it's wrong:** "Stripe-grade" means the fix is correct, not minimal. Examples of lazy-first-proposals from this session:
+
+- Matcher cache bug: first proposal was "drop the skip-if-exists logic entirely, always re-score." Real fix was content-addressed matchVersion via SHA256 hash — preserves idempotency AND fixes invalidation.
+- Backfill ETA: first proposal was "deploy without 100% backfill done, it'll catch up in 5 days." Real call is to wait for backfill to be COMPLETE before deploying because partial backfill silently degrades match quality for new users.
+
+**When the user catches you:** They will say "rethink twice — is this the real fix per the bar?" or "this is a drop in bar standards." If you hear either, your first proposal was lazy. Second analysis pass is required, run explicitly against Section 1.
+
+**Mandatory drill:** Before proposing any fix, ask out loud: "Is this Stripe-grade or is it the cheap version of Stripe-grade?" If the answer is "cheap version," do not send it. Find the real fix first.
+
+### Drift #3 — Phantom problem chasing
+
+**The pattern:** Agent treats normal system behavior as a symptom of a bug and runs multiple diagnostics before realizing the data was already explaining itself. Triggers when the agent runs 3+ diagnostic queries in a row without stating an explicit hypothesis under test.
+
+**Why it's wrong:** Wastes session time. Erodes user trust. The right question is always "is this expected?" BEFORE "is this a bug?"
+
+**Example from 2026-06-03:** v2 enrichment count showed 1 remaining. Agent treated it as suspicious. Ran 5+ Prisma queries. User caught it: "you yourself has doubt on it — first check if this is expected, then check if it's a bug." The correct answer was already in CONTEXT.md Section 4 (Groq daily limits + cron schedule explain the rate).
+
+**Drill:** Before running ANY diagnostic, write down: (a) what you believe should be true, (b) what the data is showing, (c) whether (b) is explained by stuff already in CONTEXT.md. If you can't justify the diagnostic run after that, don't run it.
+
+### Drift #4 — Section 11 priorities as quality bar
+
+**The pattern:** Agent works through Section 11 priority queue while the central product loop is broken. The Section 11 list is a queue of FEATURES, not a guarantee that previously-shipped features still work correctly.
+
+**Why it's wrong:** Tonight's session uncovered: the matcher's idempotency was keyed on a static `matcher-v1` constant. Once a (user, job) pair scored, it was never re-scored. The dashboard was effectively frozen for any user iterating on preferences. This bug had been in the codebase since Phase 2E.2.A. It survived multiple sessions of building features on top of it because nobody audited the core loop.
+
+**Drill:** At the start of every session, before working through Section 11, ask: "When was the last time someone ran the product end-to-end as a real user iterating with preferences and watched the dashboard update?" If the answer is "not this week" or "I don't know," your first task is to do that audit — change keywords, click save, verify dashboard updates with expected scores. NOT to ship the next queued feature.
+
+**The bigger rule:** A queue of features is not a substitute for system-level health. Audit periodically.
+
+### Drift #5 — Stating wall-clock from inference
+
+**The pattern:** Agent infers the current wall-clock time from message timestamps or session length, states it explicitly, and creates false urgency or false confidence.
+
+**Why it's wrong:** The agent does not have reliable access to wall-clock time. Inference compounds errors across messages. When the agent says "it's been 3 hours" or "you're at the 2.5-hour mark" without the user providing that data, the agent is fabricating.
+
+**Rule:** Agent NEVER states wall-clock or session duration unless the user provided it explicitly in the conversation. If the agent needs to reason about time (budget left, ETA), ask the user for the current time.
+
+**This is documented as Pattern #5 in Section 11 reflection notes. It continues to be a real drift trigger — call it out whenever it surfaces.**
+
+### Drift #6 — Over-asking for file pastes
+
+**The pattern:** Agent asks for narrow file slices via `sed -n` or `grep` in 4-5 consecutive turns instead of asking for the full file once. This wastes user time and creates context bloat.
+
+**Why it's wrong:** Each round trip costs user effort. The right move is usually: ask for the whole file in question ONCE, work from the complete picture for several patches, only ask for verification at the end.
+
+**Drill:** Before asking for a partial file view, ask: "Will I need to see another part of this same file in my next 1-2 turns?" If yes, ask for the whole file now. Use `cat path | pbcopy && wc -l path` to make the paste cheap.
+
+### Drift #7 — Documenting incomplete fixes as "shipped"
+
+**The pattern:** Agent declares a feature "complete" or proposes shipping when the bar isn't actually met. Triggers when the agent uses language like "good enough," "minimum viable," "acceptable for now," "will catch up later," "doesn't block deploy."
+
+**Why it's wrong:** The bar is not "minimum viable." It's Apple-grade and Stripe-grade. Apple doesn't ship the iPhone with 60% of the buttons working because the rest "will be patched."
+
+**Example from 2026-06-03:** After diagnosing the backfill rate (~150/day, ETA ~6 days for 810 NULLs), agent proposed deploying with NULLs still pending because "the matcher uses v3 jobs that exist" and "NULL backfill is background work." User correctly flagged: "this is a drop in bar standards." The right call is: deploy is gated on backfill complete AND v3 quality issues (e.g., the Accounting role hallucinating AI skills) resolved.
+
+**Drill:** Before declaring anything "complete" or "ready to ship," check each item against the bar in Section 1. If even one item fails the bar — even if it's "small" — it's not shipped, it's partial. Document it honestly as partial.
+
+### How to use this section
+
+At the start of every session, after re-reading Sections 1-11, re-read this section. When you (the agent) propose any of the following:
+
+- A plan or scope estimate
+- A "stop here, this is a good place to pause"
+- A fix proposal in response to a user-flagged bug
+- A "ready to deploy" or "this is complete"
+
+…run it against the 7 drift patterns above. If your proposed move pattern-matches to any of them, revise before sending.
+
+When the user pushes back with language like "remember the bar not the time," "is this the real fix per the bar," "you keep optimizing for X," or "this is a drop in bar standards" — you've drifted. Acknowledge it explicitly, name the drift number, re-propose against the bar, wait for the user to confirm before proceeding.
+
+The user has been more rigorous than the agent at holding the bar this session. The user trusts the agent to hold it without supervision. This section exists to make that trust earnable in future sessions.
