@@ -1,7 +1,7 @@
 # AI Job OS — Session Context
 
 > **Paste this file at the start of every new session with Claude.**
-> Last updated: 2026-06-02 evening session (parser architectural fix + Phase 2E.5 polish shipped)
+> Last updated: 2026-06-03 evening session (Phase 2E.5 complete + matcher cache invalidation architectural fix)
 
 For wider context, also point readers at:
 
@@ -32,7 +32,7 @@ One accent: `#0A84FF`. Lucide icons at stroke 1.5. Dark default, light is a port
 
 **Tone of voice** — Direct, calm, never apologetic. No emojis in UI.
 
-**Product principle** — **Never fabricate content.** Resume tailoring rewrites and re-emphasizes, but cannot invent facts. Locked/Tailored split enforces this in architecture. The matcher's signal text is machine-generated from its own logic (not LLM-fabricated). Suggested skill chips surface only what the resume parser extracted — never invented.
+**Product principle** — **Never fabricate content.** Resume tailoring rewrites and re-emphasizes, but cannot invent facts. Locked/Tailored split enforces this in architecture. The matcher's signal text is machine-generated from its own logic (not LLM-fabricated). Suggested skill and target-role chips surface only what the resume parser extracted — never invented.
 
 ---
 
@@ -41,26 +41,32 @@ One accent: `#0A84FF`. Lucide icons at stroke 1.5. Dark default, light is a port
 - **Foundation (F1-F7):** VISION, ADRs, design tokens, observability, quality gates, command palette (Cmd+K with navigate + theme + sign out)
 - **Phase 2A:** 10-table schema, 30 US companies seeded, 12 owner rules
 - **Phase 2B:** Supabase Auth + Resend SMTP + DB triggers + auth pages + middleware + onboarding
-- **Phase 2C:** Greenhouse + Ashby scrapers, cleanup script, daily cron, per-job parse refactor — 1,337 real US jobs
+- **Phase 2C:** Greenhouse + Ashby scrapers, cleanup script, daily cron, per-job parse refactor
 - **Phase 2D:** LLM provider abstraction, Groq impl with retry+throttle, enrichment orchestrator, CLI, split cron workflows
 - **Phase 2E.1:** Schema expansion (UserPreference +7, ResumeVersion +7), expanded Zod, updated Server Actions, resume parser, upload Server Action, CLI smoke test
 - **Phase 2E.2.A:** Matcher backend — 6 weighted dimensions, saturating title curve, word-boundary keyword matching, conditional relevance gate, sparsity dampening
 - **Phase 2E.2.A-fix:** Per-task LLM model override; enrichment to llama-3.1-8b-instant (5× TPD ceiling); descriptions truncated 4000→2000 chars
 - **Phase 2E.2.B:** Match reason generator — batched per-user (one LLM call returns reasons for top-10). 70b after 8b followed style poorly. Integrity rule honored.
 - **Phase 2E.3.A:** Functional dashboard at `/dashboard`. Top-10 match cards with score badge, LLM reason, three actions. Server Actions enforce ownership. Empty state with rotating progress phrases + auto-trigger.
-- **Phase 2E.3.B wave 1 (2026-05-29 morning):**
-  - **Score reveal animation** — 48px circular ring, count-up via `useMotionValue` + `animate()`, spring physics
-  - **Autocomplete on ChipInput** — extended with optional `suggestions` prop
-  - **Curated suggestion data** — `role-suggestions.ts` (~80 roles), `location-suggestions.ts` (~40 US cities + Remote)
-  - **`/settings` hub** — profile header + resume card + activity stats + redesigned preferences form with all 14 UserPreference fields
-  - **AppShell + route group migration** — `src/app/(app)/` with shared layout, 220px left nav rail, UserMenu dropdown
-  - **Server Action made redirect-configurable** — `savePreferencesAction(input, redirectTo?)` so settings stays on page while onboarding redirects
-- **Phase 2E.3.B wave 2 (2026-05-29 evening):**
-  - **Stagger-in card entrance** — 80ms stagger via Framer Motion variants on MatchList container; survivors don't re-animate on dismiss (parent hidden→visible transition runs once on mount). New `match-list.tsx` Client Component wraps the cards; page.tsx remains a Server Component.
-  - **Why-this-score expandable view** — clickable "Why this score?" link in each card footer reveals matcher's per-dimension breakdown. ScoreBreakdown component renders 6 rows (sorted by weighted contribution desc): label, weighted/max ratio, animated bar (0→score×100%), matcher's signal text ("3/4 job skills in resume"). Bars stagger-fill on expand. Independent per-card state — multiple can be expanded simultaneously.
-  - **AI-suggested keywords from parsed resume** — new `SuggestedChipsRow` above the Keywords ChipInput. Surfaces up to 15 skills from `parsedJson.skills` (47 extracted, 15 visible per UI cap). Reactive dedup (case-insensitive) — selecting a chip causes it to fade out via AnimatePresence and appear instantly as a Keywords chip. Outline style differentiates suggestions from selected chips. Honors integrity rule: surfaces only what parser extracted, never invents.
+- **Phase 2E.3.B wave 1 (May 29):** Score reveal animation, autocomplete on ChipInput, curated role/location suggestions, `/settings` hub, AppShell + (app)/ route group migration, redirect-configurable savePreferencesAction.
+- **Phase 2E.3.B wave 2 (May 29):** Stagger-in card entrance, why-this-score expandable breakdown, AI-suggested keywords from parsed resume.
+- **Phase 2E.4 (Monday 2026-06-01):** Daily cron `daily-enrich.yml` chains enrich → match → reasons sequentially. Product is self-sustaining — new matches appear daily without manual intervention.
+- **Phase 2E.3.B Monday additions:** Mobile responsive (AppShell hamburger + dashboard + settings + score ring sizing), prefs overwrite prevention (schema min(3) keywords + form dirty-field counter), enrichment v3 (anti-hallucination prompt for non-technical roles), AI-suggested keywords on onboarding form.
+- **Phase 2E.5 (Mon-Wed, COMPLETE for pre-deploy bar):** Full first-time onboarding pipeline:
+  - User schema split (firstName + lastName + phone + country, all properly typed)
+  - `/onboarding/welcome` → `/onboarding/profile` → `/onboarding/resume` → `/onboarding/preferences` → `/dashboard`
+  - Drag-and-drop resume upload (native HTML5, no react-dropzone)
+  - PDF extraction via unpdf (Mon, replaced pdf-parse v2 which had Next.js worker bug)
+  - DOCX extraction via mammoth (Wed)
+  - Resume parser v3 with code-side SKILL_BLOCKLIST + SKILL_CANONICAL cleaning (Tue)
+  - Country picker for international phone normalization (Wed — curated 250-entry ISO list, longest-prefix-match dial code detection)
+  - Edit personal info in /settings (Tue — view/edit toggle, useTransition, AnimatePresence)
+  - Onboarding progress indicator across all 4 routes (Tue — AuthShell.header prop)
+  - Suggested target roles chips on onboarding + settings (Wed — from parsedJson.currentRole + workHistory titles)
+  - Strict-ordering routing guards (Wed — centralized in onboarding.ts, profile→resume→preferences→dashboard, revisit-completed-steps allowed but no skip-ahead)
+- **Phase 2E matcher correctness fix (Wed 2026-06-03 evening):** Content-addressed matchVersion + synchronous re-match on save. This was a critical architectural bug discovered by the user — frozen dashboard scores despite preference changes. The matcher's idempotency was keyed on a static `matcher-v1` constant, so once a (user, job) pair was scored, it was never re-scored regardless of what the user changed. Fix: matchVersion now includes a SHA256 hash of all preference fields + resumeId + parseVersion. When inputs change, hash changes, all existing matches become stale-version, matcher re-scores automatically. Plus: savePreferencesAction and uploadMasterResumeAction now trigger the matcher synchronously after save. User sees "Saving and re-matching jobs…" → "Saved. Re-scored 771 jobs · 7 above threshold." Real iteration loop closed.
 
-**Total in DB: 1,337 real US jobs. Enrichment backfill running daily via cron, ~120 jobs/day. Approximately 280-300+ jobs enriched under groq-llama-3.1-8b-v2.**
+**Total in DB:** 1,581 active jobs across all companies. 771 enriched at v3, 1 v2 straggler, 810 NULL (pre-v3 scrape window, working through daily cron at ~120/day). v3 backfill expected complete approximately Friday June 5.
 
 ---
 
@@ -70,9 +76,9 @@ One accent: `#0A84FF`. Lucide icons at stroke 1.5. Dark default, light is a port
 
 ### User
 
-`id, authId, email (unique), firstName, lastName, phone, role, createdAt, updatedAt`
+`id, authId, email (unique), firstName, lastName, phone, country, role, createdAt, updatedAt`
 
-- `firstName`, `lastName` non-null (tightened 2026-06-02); `phone` nullable E.164 (US +1 default normalization)
+- `firstName`, `lastName` non-null (tightened 2026-06-02). `phone` nullable, normalized to E.164. `country` nullable ISO 3166-1 alpha-2 (added 2026-06-03).
 - relations: preferences, applications, jobMatches, blockedCompanies, resumes
 
 ### UserPreference (2E.1 expanded)
@@ -85,7 +91,7 @@ Core: `keywords[], excludeKeywords[], locations[], jobTypes[], experienceMin, ex
 - `salaryMin` (Int?) — annual USD
 - `currentEmployment` (String?) — "employed" | "unemployed" | "student" | "freelance"
 - `targetRoles` (String[] default []), `avoidCompanies` (String[] default [])
-- `onboardingComplete` (Boolean default false) — present in schema but NOT used by dashboard gate; dashboard checks `keywords.length > 0` instead
+- `onboardingComplete` (Boolean default false) — present in schema but NOT used as a gate; routing/dashboard gates check `keywords.length >= 3` and other actual data presence
 
 Canonical enums in `src/shared/schemas/preferences.ts`: `visaTypeValues`, `workAuthStatusValues`, `currentEmploymentValues`.
 
@@ -105,16 +111,16 @@ Canonical enums in `src/shared/schemas/preferences.ts`: `visaTypeValues`, `workA
 
 Core: `id, source, sourceUrl (UNIQUE), externalId, title, company, companySlug, location, remote, description, rawJson, hash, scrapedAt, expiresAt, deletedAt, updatedAt`
 AI-filled: `seniority (entry/mid/senior/staff), experienceYears (0-40), skills[], sponsorsVisa (tri-state), stemOptFriendly (tri-state), postedAt`
-Enrichment metadata: `enrichedAt`, `enrichmentVersion` (current: `groq-llama-3.1-8b-v2`)
+Enrichment metadata: `enrichedAt`, `enrichmentVersion` (current: `groq-llama-3.1-8b-v3`)
 
 ### UserJobMatch (2E.2 expanded)
 
 Core: `id, userId, jobId, matchScore, status, matchedAt, viewedAt, dismissedAt, dismissed, autoDismissed`
 2E.2 fields:
 
-- `scoreBreakdown` (Json?) — per-dimension `{score, signal, weighted}` shape; rendered by ScoreBreakdown component in 2E.3.B wave 2
+- `scoreBreakdown` (Json?) — per-dimension `{score, signal, weighted}` shape; rendered by ScoreBreakdown component
 - `reason` (Text?) — LLM-generated paragraph
-- `matchVersion` (String?) — current: `matcher-v1`
+- `matchVersion` (String?) — current shape: `matcher-v1:${12_char_sha256_hex}`. The hash captures all matcher inputs (preferences + resumeId + parseVersion). When inputs change, hash changes, idempotency triggers re-score. See Section 4 "matchVersion content-addressing" for full rules.
 - Index: `[userId, matchVersion]`
 - `status`: "fresh" | "viewed" | "applied" | "dismissed" | "rejected"
 
@@ -127,8 +133,8 @@ Core: `id, userId, jobId, matchScore, status, matchedAt, viewedAt, dismissedAt, 
 Core: `id, userId (REQUIRED), jobId (optional), contentJson, pdfUrl, docxUrl, createdAt, applications[]`
 2E.1 fields:
 
-- `isMaster` (Boolean default false) — one master per user
-- `parsedJson` (Json?) — AI-extracted: { fullName, email, phone, location, summary, totalYearsExperience, currentRole, currentCompany, education[], workHistory[], skills[], links{} }
+- `isMaster` (Boolean default false) — one master per user, atomic switch via transaction
+- `parsedJson` (Json?) — AI-extracted: { fullName, email, phone, location, summary, totalYearsExperience, currentRole, currentCompany, education[], workHistory[], skills[], links{} }. **WATCH:** workHistory[].title and workHistory[].company are now nullable in the Zod schema (real LLM output occasionally returns null for implicit/unclear titles in real-world resumes — discovered during DOCX test Wed).
 - `parsedAt` (DateTime?), `parseVersion` (String?) — current: `groq-llama-3.3-70b-resume-v3`
 - `fileName` (String?), `fileSize` (Int?)
 - Indexes: `[userId]`, `[userId, isMaster]`
@@ -145,70 +151,77 @@ Core: `id, userId (REQUIRED), jobId (optional), contentJson, pdfUrl, docxUrl, cr
 
 ## 4. LOCKED DECISIONS (do not re-discuss)
 
-| Decision                          | Value                                                                                                                                                                                                                                                                    |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **FREE TIER ONLY**                | **No paid APIs ever. Paying a penny is the defeat condition.**                                                                                                                                                                                                           |
-| Job TTL                           | 30 days for unmatched jobs                                                                                                                                                                                                                                               |
-| UserJobMatch auto-dismiss         | 7 days unviewed                                                                                                                                                                                                                                                          |
-| Application archival              | 90 days after rejection                                                                                                                                                                                                                                                  |
-| Dedup window                      | 14 days (sha256 of company\|title\|location)                                                                                                                                                                                                                             |
-| Cleanup model                     | **User-driven, not time-driven**                                                                                                                                                                                                                                         |
-| Repository pattern                | NO — direct Prisma                                                                                                                                                                                                                                                       |
-| **AI architecture**               | **Per-task free-tier model selection via `params.model` override**                                                                                                                                                                                                       |
-| Enrichment model                  | `llama-3.1-8b-instant` (Groq free, 500k TPD)                                                                                                                                                                                                                             |
-| Resume parsing model              | `llama-3.3-70b-versatile` (Groq free, quality matters)                                                                                                                                                                                                                   |
-| Reason generator model            | `llama-3.3-70b-versatile` (8b followed style poorly)                                                                                                                                                                                                                     |
-| Resume tailoring model            | `llama-3.3-70b-versatile` split 50/50 across Groq + Cerebras (planned)                                                                                                                                                                                                   |
-| Skill match                       | String intersection (lowercase + word boundary). Embeddings deferred to Phase 2H+.                                                                                                                                                                                       |
-| Groq free tier (8b-instant)       | 14,400 RPD / 30,000 TPM / 500,000 TPD                                                                                                                                                                                                                                    |
-| Groq free tier (70b)              | 1,000 RPD / 6,000 TPM / 100,000 TPD                                                                                                                                                                                                                                      |
-| Enrichment version                | `groq-llama-3.1-8b-v3` (bumped Mon after tightened anti-hallucination prompt; v2 re-enrich runs ~120/day for ~4 days)                                                                                                                                                    |
-| Enrichment throttle               | 500ms between successful jobs                                                                                                                                                                                                                                            |
-| Enrichment max_tokens             | 512                                                                                                                                                                                                                                                                      |
-| Enrichment truncation             | 2,000 chars                                                                                                                                                                                                                                                              |
-| Resume parse version              | `groq-llama-3.3-70b-resume-v3` (bumped 2026-06-02 alongside code-side blocklist+canonical-map cleaning)                                                                                                                                                                  |
-| Resume parse max_tokens           | 4096                                                                                                                                                                                                                                                                     |
-| Resume parse truncation           | 12,000 chars                                                                                                                                                                                                                                                             |
-| Resume MAX_SKILLS                 | 80                                                                                                                                                                                                                                                                       |
-| Reason version                    | `groq-llama-3.3-70b-reason-v1`                                                                                                                                                                                                                                           |
-| Reason max_tokens                 | 2048                                                                                                                                                                                                                                                                     |
-| Reason batch size                 | 10 jobs per LLM call                                                                                                                                                                                                                                                     |
-| Reason per-row length cap         | 900 chars                                                                                                                                                                                                                                                                |
-| LLM error handling                | Auth/rate-limit → abort batch; validation/transport → log+continue                                                                                                                                                                                                       |
-| LLM cron schedules                | scrape+cleanup 11:00 UTC, enrich 12:00 UTC                                                                                                                                                                                                                               |
-| **Master/Tailored split**         | Master locked truth; tailoring rewrites summary/skills/bullets only                                                                                                                                                                                                      |
-| Master switching                  | Non-destructive (preserve provenance)                                                                                                                                                                                                                                    |
-| **Matcher version**               | `matcher-v1`                                                                                                                                                                                                                                                             |
-| **Matcher weights**               | titleKeywords=25, skills=20, seniority=15, sponsorship=15, location=15, salary=10                                                                                                                                                                                        |
-| **Matcher saturation**            | 1 kw match=0.7, 2=0.9, 3+=1.0                                                                                                                                                                                                                                            |
-| **Matcher skill dampen**          | <3 job skills → score scaled by (count/3)                                                                                                                                                                                                                                |
-| **Matcher relevance gate**        | Cap at 35 if titleKw=0 AND skills=0 AND both have data                                                                                                                                                                                                                   |
-| **Matcher word matching**         | Word-boundary regex                                                                                                                                                                                                                                                      |
-| MIN_SCORE_TO_PERSIST              | 40                                                                                                                                                                                                                                                                       |
-| **Min preference keywords**       | 3 (was 1; bumped Mon after overwrite incident — schema rejects fewer with explanatory error)                                                                                                                                                                             |
-| **PDF text extraction**           | `unpdf` (serverless-friendly, no worker). Replaced pdf-parse v2 Mon (Next.js worker .mjs not found at runtime).                                                                                                                                                          |
-| **Phone validation**              | Y-lenient: accept any common format on input, normalize to E.164 in Zod transform (strip non-digits, prepend +1 if no leading +). Empty becomes null.                                                                                                                    |
-| **Drag-drop pattern**             | Native HTML5 onDragEnter/Leave/Over/Drop. `useRef` counter avoids onDragLeave flicker when entering child elements. No react-dropzone dep.                                                                                                                               |
-| **Upload state machine**          | 4 discriminated-union states: `idle` \| `uploading` \| `success` \| `error`. AnimatePresence drives state transitions with spring.snappy.                                                                                                                                |
-| **Mobile breakpoints**            | `md` (768px) for nav rail collapse; `sm` (640px) for content stacking. Hamburger top bar appears below md.                                                                                                                                                               |
-| **Mobile nav menu**               | Slide-in panel from left, 280px wide, dimmed backdrop (bg-black/60). Body scroll-lock while open. Escape + backdrop tap + nav item tap all close.                                                                                                                        |
-| **Score ring mobile**             | 40px above title on mobile (own row, right-aligned); 48px right of title on desktop. ScoreRing accepts `size?` prop, two instances with md:hidden / hidden md:block.                                                                                                     |
-| **Dashboard onboarding gate**     | `keywords.length > 0` (NOT `onboardingComplete`)                                                                                                                                                                                                                         |
-| **Empty state UX**                | Auto-trigger matcher + rotating progress phrases + AnimatePresence                                                                                                                                                                                                       |
-| **Action ownership check**        | All match Server Actions filter on BOTH matchId AND userId before mutation                                                                                                                                                                                               |
-| **Settings vs onboarding save**   | `savePreferencesAction(input, redirectTo)` — settings passes null to stay on page                                                                                                                                                                                        |
-| **Route group `(app)/`**          | Shared `AppShell` layout for all authenticated routes; URLs unchanged                                                                                                                                                                                                    |
-| **AppShell nav items**            | Dashboard / Applications (coming soon) / Settings                                                                                                                                                                                                                        |
-| **Cmd+K command palette**         | Power-user velocity surface (Foundation F7); nav rail is for discovery — both ship together                                                                                                                                                                              |
-| **Score ring animation**          | 48px SVG, spring stiffness 120 damping 20, ring + count-up driven by same `useMotionValue`                                                                                                                                                                               |
-| **Stagger-in pattern**            | Parent variants `hidden`→`visible` with `staggerChildren: 0.08`; animates once on mount, survivors don't re-animate on re-render                                                                                                                                         |
-| **Why-this-score breakdown**      | Inline expand below reason; height 0→auto via AnimatePresence; per-dimension rows sorted by weighted desc; bars stagger-fill 50ms per row; independent per-card state                                                                                                    |
-| **Suggested chips integrity**     | Surface only what resume parser extracted into `parsedJson.skills`. Never invent. Cap visible at 15. Reactive dedup (case-insensitive) against current `keywords` state.                                                                                                 |
-| **Skill cleaning architecture**   | LLM extracts everything verbatim; cleaning happens in code via `SKILL_BLOCKLIST` (Set) and `SKILL_CANONICAL` (Record) in `parse-resume.ts`. Deterministic, auditable, generalizes via blocklist; canonical map currently personalized to one user's corruption patterns. |
-| **Onboarding progress indicator** | Thin horizontal bar (4px tall, max-w-md), bg-border track + bg-accent fill, width = (current/total)\*100. Spring.snappy fill animation on mount. Step label + percentage in text-xs uppercase tracking-widest below bar.                                                 |
-| **AuthShell header prop**         | Optional `header?: ReactNode` slot between brand mark and title block in `auth-shell.tsx`. Centered alignment. Used by onboarding routes to inject progress indicator. Backward compatible — pages without `header` render unchanged.                                    |
-| Resume file types accepted        | PDF + plain text (DOCX deferred); 5 MB max                                                                                                                                                                                                                               |
-| Schema strictness                 | Strict on fields we use; permissive on metadata                                                                                                                                                                                                                          |
+| Decision                                        | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **FREE TIER ONLY**                              | **No paid APIs ever. Paying a penny is the defeat condition.**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Job TTL                                         | 30 days for unmatched jobs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| UserJobMatch auto-dismiss                       | 7 days unviewed                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Application archival                            | 90 days after rejection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Dedup window                                    | 14 days (sha256 of company\|title\|location)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Cleanup model                                   | **User-driven, not time-driven**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Repository pattern                              | NO — direct Prisma                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **AI architecture**                             | **Per-task free-tier model selection via `params.model` override**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Enrichment model                                | `llama-3.1-8b-instant` (Groq free, 500k TPD)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Resume parsing model                            | `llama-3.3-70b-versatile` (Groq free, quality matters)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Reason generator model                          | `llama-3.3-70b-versatile` (8b followed style poorly)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Resume tailoring model                          | `llama-3.3-70b-versatile` split 50/50 across Groq + Cerebras (Phase 2G planned)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Skill match                                     | String intersection (lowercase + word boundary). Embeddings deferred to Phase 2H+.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Groq free tier (8b-instant)                     | 14,400 RPD / 30,000 TPM / 500,000 TPD                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Groq free tier (70b)                            | 1,000 RPD / 6,000 TPM / 100,000 TPD                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Enrichment version                              | `groq-llama-3.1-8b-v3` (current; bumped Mon after tightened anti-hallucination prompt)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Enrichment throttle                             | 500ms between successful jobs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Enrichment max_tokens                           | 512                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Enrichment truncation                           | 2,000 chars                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Resume parse version                            | `groq-llama-3.3-70b-resume-v3` (current; bumped 2026-06-02 alongside code-side blocklist+canonical-map cleaning)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| Resume parse max_tokens                         | 4096                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Resume parse truncation                         | 12,000 chars                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Resume MAX_SKILLS                               | 80                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| Reason version                                  | `groq-llama-3.3-70b-reason-v1`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Reason max_tokens                               | 2048                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Reason batch size                               | 10 jobs per LLM call                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Reason per-row length cap                       | 900 chars                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| LLM error handling                              | Auth/rate-limit → abort batch; validation/transport → log+continue                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| LLM cron schedules                              | scrape+cleanup 11:00 UTC, enrich 12:00 UTC                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Master/Tailored split**                       | Master locked truth; tailoring rewrites summary/skills/bullets only                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Master switching                                | Non-destructive (preserve provenance) — atomic via Prisma transaction                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **MATCHER VERSION CONTENT-ADDRESSING**          | `matcher-v1:${sha256_first12(stableSerialize(input))}`. Inputs hashed: all UserPreference matcher-read fields (keywords, excludeKeywords, targetRoles, locations, jobTypes, experienceMin/Max, visaSponsorship, stemOptOnly, visaType, workAuthStatus, salaryMin, currentEmployment, avoidCompanies) + resumeId + parseVersion. Computed in `match.ts` via `computeMatchVersion(input)`. When ANY input changes, hash changes, skip-if-exists query returns nothing, matcher re-scores every job. **This is the real correctness mechanism.** Idempotency is preserved when inputs are stable; invalidation is automatic when inputs change. Self-heals — no backfill needed when shipping. |
+| **Matcher weights**                             | titleKeywords=25, skills=20, seniority=15, sponsorship=15, location=15, salary=10                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Matcher saturation**                          | 1 kw match=0.7, 2=0.9, 3+=1.0                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| **Matcher skill dampen**                        | <3 job skills → score scaled by (count/3)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Matcher relevance gate**                      | Cap at 35 if titleKw=0 AND skills=0 AND both have data                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| **Matcher word matching**                       | Word-boundary regex                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| MIN_SCORE_TO_PERSIST                            | 40                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Min preference keywords**                     | 3 (was 1; bumped Mon after overwrite incident — schema rejects fewer with explanatory error)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **SYNCHRONOUS MATCHER ON SAVE**                 | `savePreferencesAction` and `uploadMasterResumeAction` both call `matchJobsForUser({ userId, force: true })` after persisting their data. Trigger is in an inner try/catch — matcher failure does NOT fail the user-visible save. Match summary `{ jobsConsidered, upserted, scoredAbove }` returned to client. UI shows "Saving and re-matching jobs…" during the wait (~2-3 seconds for 771 jobs) and "Saved. Re-scored X jobs · Y above threshold." in confirmation toast.                                                                                                                                                                                                               |
+| **Match summary surfacing**                     | Settings preferences form: enriched savedAt toast with concrete count. Onboarding preferences form: motion.button replaces SubmitButton (useFormStatus doesn't fire with onSubmit+startTransition); pending label "Saving and re-matching jobs…". Resume upload form: "Parsing and matching jobs…" label during upload state.                                                                                                                                                                                                                                                                                                                                                               |
+| **PDF text extraction**                         | `unpdf` (serverless-friendly, no worker). Replaced pdf-parse v2 Mon (Next.js worker .mjs not found at runtime).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| **DOCX text extraction**                        | `mammoth.extractRawText({ buffer })` only. HTML output mode discarded — raw text is sufficient for LLM parser, and formatting hints don't improve quality enough to justify payload size. Added Wed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Country picker architecture**                 | Curated static list at `src/shared/data/countries.ts` (250+ entries, ISO 3166-1 alpha-2 code + English name + E.164 dial code). No external library, no bundle bloat. No flag emojis (bar forbids emojis in UI). Picker shows `CODE` + `+dial` in trigger; dropdown row shows code (muted) + name + dial (muted).                                                                                                                                                                                                                                                                                                                                                                           |
+| **Phone validation (Y-lenient, country-aware)** | Country-aware: profileSchema requires `country` (ISO code) alongside phone. Normalizer detects ANY existing dial code in the input (longest-prefix-match against all known dial codes), strips it, prepends the SELECTED country's dial code. Handles "user changed country picker but kept phone field" correctly — was the real bug caught mid-test Wed. Empty becomes null.                                                                                                                                                                                                                                                                                                              |
+| **Drag-drop pattern**                           | Native HTML5 onDragEnter/Leave/Over/Drop. `useRef` counter avoids onDragLeave flicker when entering child elements. No react-dropzone dep.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Upload state machine**                        | 4 discriminated-union states: `idle` \| `uploading` \| `success` \| `error`. AnimatePresence drives state transitions with spring.snappy.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| **Resume file types accepted**                  | PDF (via unpdf) + DOCX (via mammoth) + plain text. 5 MB max. UI accept attribute lists both MIME types + .pdf/.docx extension fallbacks.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **Mobile breakpoints**                          | `md` (768px) for nav rail collapse; `sm` (640px) for content stacking. Hamburger top bar appears below md.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Mobile nav menu**                             | Slide-in panel from left, 280px wide, dimmed backdrop (bg-black/60). Body scroll-lock while open. Escape + backdrop tap + nav item tap all close.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Score ring mobile**                           | 40px above title on mobile (own row, right-aligned); 48px right of title on desktop. ScoreRing accepts `size?` prop, two instances with md:hidden / hidden md:block.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| **Onboarding routing strict ordering**          | Centralized in `src/server/lib/onboarding.ts`. `getNextOnboardingStep(state)` returns first incomplete step or null. `canAccessStep(step, state)` returns allowed/redirectTo. Step rules: profile = firstName + lastName non-empty; resume = master ResumeVersion exists; preferences = keywords.length >= 3. Users CAN revisit completed steps (edit name, swap resume, change prefs). Users CANNOT skip ahead — bounces back to first incomplete step. Welcome is intro-only, not a gate.                                                                                                                                                                                                 |
+| **Dashboard onboarding gate**                   | Uses `getNextOnboardingStep` helper. If returns non-null, dashboard redirects there. Replaces previous broken hasMasterResume / hasPreferences inline checks with stale "contact the team to seed resume" dead-code placeholder.                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Empty state UX**                              | Auto-trigger matcher + rotating progress phrases + AnimatePresence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **Action ownership check**                      | All match Server Actions filter on BOTH matchId AND userId before mutation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Settings vs onboarding save**                 | `savePreferencesAction(input, redirectTo)` — settings passes null to stay on page                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Route group `(app)/`**                        | Shared `AppShell` layout for all authenticated routes; URLs unchanged                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **AppShell nav items**                          | Dashboard / Applications (coming soon) / Settings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| **Cmd+K command palette**                       | Power-user velocity surface (Foundation F7); nav rail is for discovery — both ship together                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| **Score ring animation**                        | 48px SVG, spring stiffness 120 damping 20, ring + count-up driven by same `useMotionValue`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Stagger-in pattern**                          | Parent variants `hidden`→`visible` with `staggerChildren: 0.08`; animates once on mount, survivors don't re-animate on re-render                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Why-this-score breakdown**                    | Inline expand below reason; height 0→auto via AnimatePresence; per-dimension rows sorted by weighted desc; bars stagger-fill 50ms per row; independent per-card state                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **Suggested chips integrity**                   | Surface only what resume parser extracted. Never invent. Keyword chips cap 15, target role chips cap 5. Reactive dedup (case-insensitive) against current state.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| **Suggested target roles source**               | `parsedJson.currentRole` + `parsedJson.workHistory[].title`. Computed server-side in both `/onboarding/preferences/page.tsx` and `/settings/page.tsx`. Lowercase + Set-dedupe + slice 5. Rendered above the targetRoles ChipInput on both surfaces.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **Skill cleaning architecture**                 | LLM extracts everything verbatim; cleaning happens in code via `SKILL_BLOCKLIST` (Set) and `SKILL_CANONICAL` (Record) in `parse-resume.ts`. Deterministic, auditable, generalizes via blocklist; canonical map currently personalized to one user's corruption patterns. Tuesday lesson: LLM prompts are extraction tools, not quality filters.                                                                                                                                                                                                                                                                                                                                             |
+| **Onboarding progress indicator**               | Thin horizontal bar (4px tall, max-w-md), bg-border track + bg-accent fill, width = (current/total)\*100. Spring.snappy fill animation on mount. Step label + percentage in text-xs uppercase tracking-widest below bar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| **AuthShell header prop**                       | Optional `header?: ReactNode` slot between brand mark and title block in `auth-shell.tsx`. Centered alignment. Used by onboarding routes to inject progress indicator. Backward compatible — pages without `header` render unchanged.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Schema strictness                               | Strict on fields we use; permissive on metadata. workHistory.title/company nullable in Zod (real-world resumes have implicit titles).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| **DB migration workflow**                       | `prisma db push` ONLY — never `prisma migrate dev`. migrate dev would offer destructive reset due to existing drift, which would wipe all data. Always pre-flight DB-touching changes with a NULL/integrity check before pressing y.                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ---
 
@@ -223,32 +236,41 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 - `llm.ts` — provider-agnostic interface with per-call `model?` override
 - `groq-provider.ts` — Groq impl with retry, timeout, Retry-After
 - `enrich.ts` — job enrichment orchestrator
-- `parse-resume.ts` — resume parser (no model override; uses provider default 70b)
+- `parse-resume.ts` — resume parser (v3 with SKILL_BLOCKLIST + SKILL_CANONICAL code-side cleaning; workHistory.title/company nullable in Zod)
 
 ### Matcher (`src/server/services/matcher/`)
 
 - `score.ts` — pure scoring functions (6 dimensions, weighted composition)
 - `filters.ts` — hard pre-filters
-- `match.ts` — orchestrator (idempotency, upsert, status preservation)
-- `reason.ts` — batched per-user reason generator (70b, integrity rule)
+- `match.ts` — orchestrator. Exports `computeMatchVersion(input)` returning `matcher-v1:${hash}`. Uses content-addressed version everywhere (skip-if-exists query, upsert payloads, summary return). Self-healing migration when shipped.
+- `reason.ts` — batched per-user reason generator (70b, integrity rule). Note: reasons run via daily cron only, NOT triggered synchronously on save. Acceptable lag — scores are primary signal, reasons are explanation.
 
-### Server Actions (`src/server/actions/`)
+### Server actions (`src/server/actions/`)
 
 - `auth.ts` — signup/signin/signout (signOutAction is form action)
-- `preferences.ts` — savePreferencesAction(input, redirectTo?) — null skips redirect
-- `profile.ts` — saveProfileAction (firstName/lastName/phone, Zod-normalized phone to E.164)
-- `resume.ts` — uploadMasterResumeAction (5MB cap, atomic master-switch, unpdf extraction)
+- `preferences.ts` — `savePreferencesAction(input, redirectTo?)`. Upserts UserPreference, then triggers matcher in inner try/catch with `force: true`. Returns `{ success, matchSummary }` on success. Matcher failures don't fail the save — daily cron picks up.
+- `profile.ts` — `saveProfileAction` (firstName/lastName/phone/country, country-aware E.164 normalization with longest-prefix-match dial code detection)
+- `resume.ts` — `uploadMasterResumeAction` (5MB cap, MIME-routed extraction: unpdf for PDF, mammoth for DOCX, direct buffer for plain text). After atomic master-switch transaction, triggers matcher in inner try/catch. Returns `{ success, resumeId, matchSummary }`.
 - `match.ts` — markViewed / dismiss / markApplied / triggerMatcher (all ownership-checked)
+
+### Server lib (`src/server/lib/`)
+
+- `prisma.ts` — Prisma singleton
+- `logger.ts` — Pino structured logger
+- `supabase-server.ts` — cookie-bound Supabase client (server-only guarded)
+- `supabase-admin.ts` — service-role admin client
+- `posthog.ts` — analytics
+- `onboarding.ts` — Centralized onboarding-progression rules. `getNextOnboardingStep(state)` returns first incomplete step or null. `canAccessStep(step, state)` returns `{ allowed: true }` or `{ allowed: false, redirectTo }`. Used by dashboard for redirect computation, used by each onboarding page.tsx for prior-step enforcement.
 
 ### App routes (`src/app/`)
 
 - `/login`, `/signup` (Phase 2B) — outside (app) group
-- `/onboarding/welcome` (Phase 2E.5) — outside (app); 3-step preview, "Get started" CTA, redirects fully-onboarded users to /dashboard
-- `/onboarding/profile` (Phase 2E.5) — outside (app); firstName + lastName + phone collection with Y-lenient normalization
-- `/onboarding/resume` (Phase 2E.5) — outside (app); native HTML5 drag-drop + click-to-browse, 4-state state machine, calls uploadMasterResumeAction
-- `/onboarding/preferences` (Phase 2B + 2E.3.B) — outside (app); 8-field form with AI-suggested chips from parsedJson.skills
-- `/dashboard` (Phase 2E.3.A + B) — inside (app)/ — daily briefing with stagger-in + score reveal + expandable breakdown
-- `/settings` (Phase 2E.3.B) — inside (app)/ — configuration hub with AI-suggested keywords + dirty field counter
+- `/onboarding/welcome` (Phase 2E.5) — outside (app); 3-step preview, "Get started" CTA, redirects fully-onboarded users to /dashboard. Intro-only, NOT a routing gate.
+- `/onboarding/profile` (Phase 2E.5) — outside (app); firstName + lastName + phone (with CountryPicker) collection. No prior-step gate (it's the first step). Revisit-allowed (form prefills).
+- `/onboarding/resume` (Phase 2E.5) — outside (app); native HTML5 drag-drop, accepts PDF + DOCX. Prior-step gate: profile must be complete (firstName + lastName non-empty).
+- `/onboarding/preferences` (Phase 2B + 2E.3.B + 2E.5) — outside (app); preferences form with suggested skill chips + suggested target role chips. Prior-step gate: profile AND resume must be complete.
+- `/dashboard` (Phase 2E.3.A + B + matcher-fix) — inside (app)/. If `getNextOnboardingStep` returns non-null, redirects there. Otherwise daily briefing with stagger-in + score reveal + expandable breakdown.
+- `/settings` (Phase 2E.3.B) — inside (app)/ — configuration hub with personal info edit + AI-suggested keywords + suggested target roles + dirty field counter
 - Future: `/applications` (Phase 2I)
 
 ### AppShell (`src/app/(app)/`)
@@ -267,32 +289,34 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 
 ### Settings components (`src/app/(app)/settings/`)
 
-- `page.tsx` — Server Component shell, profile header + personal info edit + resume card + activity stats + form; extracts and passes `suggestedSkills` from `parsedJson.skills`
-- `_components/personal-info-section.tsx` — Client Component, read-only view by default with Edit toggle; edit mode shows firstName/lastName/phone inputs, useTransition save via saveProfileAction, AnimatePresence between view/edit modes
-- `_components/preferences-form.tsx` — client form with 6 sections, FormSection + RadioCardGroup + SegmentedSelect + SuggestedChipsRow inline components
+- `page.tsx` — Server Component shell. Extracts and passes `suggestedSkills` from `parsedJson.skills` AND `suggestedTargetRoles` from `parsedJson.currentRole + workHistory[].title`. Passes `country` to PersonalInfoSection.
+- `_components/personal-info-section.tsx` — Client Component, read-only view by default with Edit toggle. Edit mode: paired CountryPicker + phone input. View mode dl row: Name, Country (name + dial), Phone (normalized E.164). useTransition save via saveProfileAction.
+- `_components/preferences-form.tsx` — client form with 6 sections. Two SuggestedChipsRow instances (above Keywords + above Target Roles). matchSummary state captured from action result. Saved toast: "Saved. Re-scored X jobs · Y above threshold." Button label: "Saving and re-matching jobs…" during pending.
 
 ### Shared (`src/components/onboarding/`)
 
 - `chip-input.tsx` — chip input WITH optional autocomplete (suggestions prop)
+- `country-picker.tsx` — Searchable dropdown for ISO country + dial code. Trigger shows `CODE +dial`. Dropdown: search input + scrollable list (country code muted, name, dial muted). Click-outside / Escape close. AnimatePresence + spring.snappy.
 - `experience-range.tsx` — segmented experience buttons
 - `job-type-select.tsx` — toggle pills for job types
 - `preference-toggle.tsx` — switch with label/description (takes `value` not `checked`)
-- `progress.tsx` — 4px-tall horizontal bar, max-w-md, bg-border track + bg-accent fill; `current` (1-indexed) / `total` props compute pct; spring.snappy fill animation on mount; step label + percentage row below in uppercase tracking-widest
+- `progress.tsx` — 4px-tall horizontal bar, max-w-md, bg-border track + bg-accent fill; spring.snappy fill animation on mount
 
 ### Onboarding components (`src/app/onboarding/`)
 
-- `welcome/page.tsx` — Server Component, 3-step preview cards with numbered circles + icons, completion-check redirect
-- `profile/page.tsx` — Server Component, prefill from existing user, renders `<ProfileClientForm>`
-- `profile/_components/profile-client-form.tsx` — Client form, useTransition save, motion.button with isPending spinner
-- `resume/page.tsx` — Server Component, fetches existing master fileName, renders `<ResumeUploadForm>`
-- `resume/_components/resume-upload-form.tsx` — Native HTML5 drag-drop, 4-state state machine, AnimatePresence transitions
-- `preferences/page.tsx` — Server Component, computes suggestedSkills from parsedJson, renders `<PreferencesClientForm>`
-- `preferences/_components/preferences-client-form.tsx` — Client form, inline SuggestedChipsRow above Keywords ChipInput
+- `welcome/page.tsx` — Server Component, 3-step preview cards, completion-check redirect
+- `profile/page.tsx` — Server Component. Reads firstName/lastName/phone/country. Renders ProfileClientForm.
+- `profile/_components/profile-client-form.tsx` — Client form. Paired CountryPicker + phone input. useTransition save, motion.button with isPending spinner.
+- `resume/page.tsx` — Server Component. Reads firstName/lastName to enforce prior-step gate via canAccessStep. Renders ResumeUploadForm.
+- `resume/_components/resume-upload-form.tsx` — Native HTML5 drag-drop, accepts PDF + DOCX, 4-state state machine. Pending label: "Parsing and matching jobs…"
+- `preferences/page.tsx` — Server Component. Reads parsedJson, computes suggestedSkills + suggestedTargetRoles. Prior-step gate via canAccessStep (profile + resume must be done). Renders PreferencesClientForm.
+- `preferences/_components/preferences-client-form.tsx` — Client form. Two suggestion rows (keywords + target roles). motion.button with isPending (NOT SubmitButton — useFormStatus doesn't fire in onSubmit+startTransition context). Pending label: "Saving and re-matching jobs…"
 
 ### Data files (`src/shared/data/`)
 
-- `role-suggestions.ts` — curated job titles/skills for ChipInput autocomplete
-- `location-suggestions.ts` — curated US cities + Remote
+- `role-suggestions.ts` — curated job titles/skills for ChipInput autocomplete (~80 entries)
+- `location-suggestions.ts` — curated US cities + Remote (~40 entries)
+- `countries.ts` — Full ISO 3166-1 alpha-2 list (~250 entries) with English name + E.164 dial code. Exports COUNTRIES array, findCountry lookup, DEFAULT_COUNTRY_CODE = "US".
 
 ### CLI scripts (`scripts/`)
 
@@ -305,8 +329,9 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 - `show-prefs.ts` — dev helper, prints UserPreference row as JSON
 - `show-bad-match.ts` — dev helper, prints job + match breakdown for a low-quality match
 - `show-cluster.ts` — dev helper, lists matches in a score range with skills arrays
-- `match-diagnostics.ts` — dev helper, total/enriched counts + match score distribution
+- `match-diagnostics.ts` — dev helper, total/enriched counts + match score distribution (note: hardcoded to count v2; for v3 stats use ad-hoc Prisma groupBy)
 - `test-enrich-prompt.ts` — A/B tests enrichment prompts against known-bad DB jobs without DB writes
+- `test-parse-prompt.ts` — A/B tests resume parser prompts (Tue addition)
 - `undismiss-all.ts` — dev helper to reset matches for repeated testing
 
 ### GitHub Actions
@@ -318,160 +343,87 @@ greenhouse.ts/schema.ts, ashby.ts/schema.ts, location.ts, hash.ts, rules.ts
 
 ## 6. WHAT REMAINS
 
-### Phase 2E.3.B continued (cinematic polish, multi-session, ~8-10h)
+### Phase 2E.3.B continued (cinematic polish, multi-session, ~6-8h)
 
-Items still remaining (mobile responsive + AI-suggested onboarding + drag-drop resume route all shipped Monday):
+Items not yet shipped:
 
 1. **Full accessibility pass** — ARIA, keyboard nav, focus management (~3h)
 2. **Keyboard shortcuts in dashboard** — save/dismiss/next via keyboard (~2h)
 3. **Loading skeletons + error boundaries** at polish level (~2h)
-4. **Suggested target roles from resume's currentRole** — same UX as suggested keywords (~1h)
-5. **AI-suggested locations from resume.location** — separate ship (~1h)
-
-Note: "Choreographed multi-step onboarding" promoted to dedicated Phase 2E.5 below.
+4. **AI-suggested locations from resume.location** — separate ship (~1h)
 
 ### Phase 2E.4 — ✅ SHIPPED (Monday)
 
-Daily cron now runs enrich → match → reasons sequentially via `daily-enrich.yml`. Both `match.ts --all-users` and `reasons.ts --all-users` are wired in. Product is self-sustaining — new matches appear daily without manual intervention.
+Daily cron now runs enrich → match → reasons sequentially via `daily-enrich.yml`. Product is self-sustaining.
 
-### Phase 2E.5 — First-time onboarding flow (MOSTLY SHIPPED, ~5h remaining)
+### Phase 2E.5 — ✅ COMPLETE for pre-deploy bar (Mon-Wed)
 
-Phase 2E.5 covers the new-user onboarding pipeline. Schema, routes, and most polish are shipped. End-to-end working: `/onboarding/welcome` → `/onboarding/profile` (firstName + lastName + phone) → `/onboarding/resume` (drag-drop PDF, unpdf extract, Groq 70b parse) → `/onboarding/preferences` (AI-suggested chips from parsed resume) → `/dashboard`.
+Full first-time onboarding pipeline shipped. End-to-end working with strict-ordering routing guards:
 
-Already shipped:
+- ✅ Welcome / Profile / Resume / Preferences routes (Mon-Tue)
+- ✅ Resume drag-drop + PDF (unpdf) + DOCX (mammoth) (Mon + Wed)
+- ✅ Parser v3 with code-side cleaning (Tue)
+- ✅ Country picker + country-aware phone normalization (Wed)
+- ✅ Edit personal info in /settings (Tue)
+- ✅ Onboarding progress indicator (Tue)
+- ✅ User.firstName/lastName non-null (Tue)
+- ✅ Suggested target roles chips on both surfaces (Wed)
+- ✅ Strict-ordering routing guards (Wed)
 
-- ✅ Schema split: User.name → firstName + lastName + phone (E.164). Backfilled existing row. `prisma db push` workflow. (Monday)
-- ✅ `/onboarding/welcome` — 3-step preview, "Get started" CTA, redirects fully-onboarded users to /dashboard (Monday)
-- ✅ `/onboarding/profile` — server+client split, prefill from existing user, Y-lenient phone normalization (accepts any common format, normalizes to E.164, US +1 default if no country code), Zod validation (Monday)
-- ✅ `/onboarding/resume` — native HTML5 drag-and-drop (no react-dropzone), 4-state state machine (idle/uploading/success/error), drag-counter avoids onDragLeave flicker, calls existing uploadMasterResumeAction (Monday)
-- ✅ PDF parser swap: pdf-parse v2 had a Next.js worker module bug. Replaced with `unpdf` (serverless-friendly, no worker). Updated 3 files: resume.ts action, parse-resume.ts CLI, seed-master-resume.ts CLI. (Monday)
-- ✅ `saveProfileAction` Server Action + `profileSchema` Zod schema with phone normalization (Monday)
-- ✅ Edit personal info in /settings — new PersonalInfoSection Client Component with view/edit toggle, useTransition save (Tuesday)
-- ✅ Progress indicator UI across all four onboarding routes — thin bar + step label + percentage, AuthShell now accepts `header` prop (Tuesday)
-- ✅ Tighten User.firstName/lastName to non-null — schema migration + removed email-prefix fallbacks in dashboard/settings greetings (Tuesday)
-- ✅ Parser prompt tightening — became architectural fix: LLM extracts everything verbatim, code-side `SKILL_BLOCKLIST` + `SKILL_CANONICAL` clean output. RESUME_PARSE_VERSION bumped v2 → v3. Test harness at `scripts/test-parse-prompt.ts`. (Tuesday)
+Only deferred to post-deploy:
 
-Remaining (~5h, future sessions):
+- **Fuzzy-matching whitelist for parser cleaning** — replace the personalized SKILL_CANONICAL map with Levenshtein-distance matching against a curated known-technologies whitelist (~5000 entries). Generalizes cleanly to any user's OCR errors. Deferred until real user data informs tuning. (~4-6h)
 
-- **Country picker for phone** — currently defaults to +1 if no country code, but international workers need a proper picker. Curated country list with dial codes + searchable dropdown. (~2h)
-- **DOCX upload support** — currently PDF only, known issue #6. Mammoth or similar for .docx text extraction. (~2h)
-- **Routing guard hardening** — what if user uploads, leaves at preferences step, comes back later? Currently the welcome page redirect handles fully-onboarded users, but partial-completion edge cases aren't all covered. (~1h)
-- **Fuzzy-matching whitelist for parser cleaning** (post-deploy work) — replace the personalized `SKILL_CANONICAL` map with Levenshtein-distance matching against a curated known-technologies whitelist (~5000 entries). Generalizes cleanly to any user's OCR errors. Deferred until real user data informs tuning. (~4-6h)
+### Phase 2E matcher correctness fix — ✅ SHIPPED (Wed evening)
+
+Critical architectural fix discovered by user flag. Matcher's idempotency was keyed on a static `matcher-v1` constant, so preference changes never re-scored existing matches — dashboard appeared frozen despite save success. Two-layer fix:
+
+- ✅ Content-addressed matchVersion: SHA256 hash of preferences + resumeId + parseVersion. Hash change → automatic cache invalidation → re-score on next run.
+- ✅ Synchronous matcher trigger on save: savePreferencesAction + uploadMasterResumeAction call matchJobsForUser with force=true, graceful failure preserves save success. Match summary surfaces in UI ("Saved. Re-scored X jobs · Y above threshold.").
+
+Real iteration loop closed.
 
 ### Phase 2F — Vercel deploy (~3-4h)
 
-- env var migration, edge vs node runtime decisions, upload limits, cold-start handling
+**Only remaining blocker before deploy: v3 enrichment backfill completion** (810 NULL jobs working through cron at ~120/day; expected complete approximately Friday June 5).
+
+Real deploy work:
+
+- env var migration to Vercel
+- edge vs node runtime decisions (Server Actions are node; Server Components likely edge-safe)
+- upload limits (5 MB file body — Vercel free tier supports this)
+- cold-start handling (Prisma client + Supabase client initialization)
+- domain + Resend SMTP config for production auth callbacks
 
 ### Phase 2G — Resume tailoring (multi-session, ~25-35h total)
 
-**Product thesis:**
+Full architectural spec lives in this section in detail. Summary: take a master resume + a specific job, generate a tailored variant that re-orders skills/bullets, rewrites summary, and surfaces relevant truth WITHOUT fabrication. Hard problem is verification (catching when LLM crosses into fabrication), not generation.
 
-A match score of 60% means the job is worth pursuing — but the missing 40% is what gets the resume screened out. Resume tailoring closes that gap not by lying, but by surfacing relevant truth that the master resume buries beneath other content. The tailored resume must convince two readers:
+**Sub-phases (gated on Phase 2F deploy):**
 
-1. **The ATS keyword parser** — keyword density on job-required skills, role-title alignment, technologies surfaced in the first half of the document
-2. **A senior recruiter with decades of experience** — readable, credible, no obvious AI noise, no fabricated claims that fall apart under questioning
+- **Phase 2G.0** (~2-3h): Cerebras provider implementing LLMProvider interface. Free-tier quota check. No tailoring yet.
+- **Phase 2G.1** (~10-12h): TailoredResume table + tailorResumeForMatch action + verification pass + structural diff computation.
+- **Phase 2G.2** (~8-10h): /dashboard/tailor/[matchId] route with side-by-side preview + change panel + per-change revert.
+- **Phase 2G.3** (~5-8h): PDF rendering from tailoredJson. ATS-friendly layout.
+- **Phase 2G.4** (~3-5h, optional): DOCX rendering.
 
-The bar: a senior recruiter reading the tailored resume should think "yeah, this person fits" — not "this was clearly AI-generated."
+**Forbidden transformations (verification must catch all):**
 
-**What the LLM CAN change (allowed transformations):**
+- Add a skill not in master.parsedJson.skills
+- Add a bullet that doesn't trace to a master bullet
+- Change company/title/dates
+- Change education details
+- Claim experience master doesn't claim
 
-- Reorder skills array to put job-relevant skills first
-- Reorder work history bullets within a role to emphasize matching experience
-- Rewrite the summary/objective to use the job's terminology — but every claim must trace to master content
-- Rewrite individual bullet text to use job's vocabulary (e.g., "machine learning models" -> "ML/AI systems" if the job uses that phrasing) — but the underlying fact must exist in master
-- Decide which 6-10 bullets per role get included (single-page constraint forces selection)
-- Truncate/select which work history rows to include if too long for one page
+**Allowed transformations:**
 
-**What the LLM CANNOT change (forbidden — produces fabrication):**
+- Reorder skills/bullets
+- Rewrite summary using job terminology (every claim must trace to master)
+- Rewrite bullet text in job's vocabulary (underlying fact must exist in master)
+- Decide which 6-10 bullets to include per role (single-page constraint)
+- Truncate work history if too long
 
-- Add a skill not present in master.parsedJson.skills
-- Add a bullet that doesn't trace to a master bullet (1:1 or split allowed; invention forbidden)
-- Change a company name, job title, or dates
-- Change education details (school, degree, dates)
-- Claim experience the master doesn't claim
-
-**The hard problem: verification, not generation.**
-
-Generation is the easy 30%. The hard 70% is detecting when the LLM crosses the line into fabrication. The architecture must catch this BEFORE the user sees fabricated content.
-
-**Architecture:**
-
-1. **TailoredResume model** (new Prisma table):
-   - id, userId, masterResumeId (FK), jobId (FK), createdAt, updatedAt
-   - tailoredJson (parsedJson shape, same schema as master)
-   - changesJson (structured diff against master)
-   - userOverridesJson (per-change accept/revert state)
-   - status: "draft" | "accepted" | "downloaded"
-   - llmModel, llmVersion (provenance)
-
-2. **Generation flow** (Server Action: `tailorResumeForMatch(matchId)`):
-   - Load master.parsedJson + job (title + description + extractedSkills from enrichment)
-   - LLM call with system prompt: "rewrite this resume for this job, following these rules: [allowed/forbidden list]"
-   - LLM returns tailoredJson in same parsedJson shape
-   - **Verification pass (the critical step):**
-     - Every skill in tailoredJson.skills MUST exist (case-insensitive) in masterJson.skills. Reject otherwise.
-     - Every bullet in tailoredJson.workHistory MUST be derivable from a master bullet — use string similarity (Levenshtein or cosine over embeddings) with a threshold. Bullets below threshold are flagged as "possibly fabricated."
-     - Every company + title + date triple must match a master row exactly.
-   - If verification fails on >0 fabrication flags: either auto-retry with stronger constraints, or surface to user as "AI produced fabrication, please regenerate."
-   - **Structural diff computation:**
-     - Mechanical comparison master.parsedJson vs tailoredJson — NOT LLM self-report
-     - Produces changesJson: array of typed changes
-       - { type: "skill_reorder", old: [...], new: [...] }
-       - { type: "skill_added_from_master", skill: "..." } (allowed)
-       - { type: "skill_removed", skill: "..." } (allowed — they didn't include it)
-       - { type: "bullet_reword", company, title, bulletIndex, oldText, newText, similarity }
-       - { type: "bullet_reorder", company, title, oldOrder: [0,1,2], newOrder: [2,0,1] }
-       - { type: "summary_rewrite", oldText, newText }
-       - { type: "section_omitted", section: "education[2]" } (single-page constraint)
-   - Persist tailoredJson + changesJson to TailoredResume row
-
-3. **UI: `/dashboard/tailor/[matchId]` route** (new):
-   - Two clean documents side-by-side: master (left, read-only), tailored (right, editable)
-   - Each rendered from parsedJson — NOT raw PDF text — so they look identical in style
-   - Below: "What changed" panel — list of changes from changesJson
-   - Each change has: "Keep" (default) and "Revert to master" buttons
-   - Reverting a change updates the tailored render in real time (client state, persisted to userOverridesJson on save)
-   - Bottom buttons:
-     - "Regenerate" — calls tailorResumeForMatch again with fresh LLM call
-     - "Download PDF" — renders tailoredJson with applied user overrides to PDF (using existing PDF skill or a new renderer)
-     - "Download DOCX" — same, DOCX output (Phase 2G.2, later)
-
-4. **LLM strategy:**
-   - Primary: `llama-3.3-70b-versatile` (current)
-   - Once Cerebras provider added: split 50/50 across Groq and Cerebras for daily quota expansion
-   - Verification is the limiter, not generation — even if quota constrains us to 10 tailorings/day, that's plenty for the early phase
-
-**Sub-phases:**
-
-- **Phase 2G.0** (~2-3h): Cerebras provider implementing LLMProvider interface, same shape as Groq. Free-tier quota check. No tailoring yet, just the provider.
-- **Phase 2G.1** (~10-12h): TailoredResume table + tailorResumeForMatch action + verification pass + structural diff computation. Test against 5-10 jobs from current dashboard. No UI yet, just the engine.
-- **Phase 2G.2** (~8-10h): /dashboard/tailor/[matchId] route, side-by-side preview from parsedJson, "what changed" panel with per-change revert, real-time tailored re-render on revert.
-- **Phase 2G.3** (~5-8h): PDF rendering from tailoredJson using existing PDF skill. ATS-friendly layout (no multi-column tricks, no fancy fonts, semantic structure). Download flow.
-- **Phase 2G.4** (~3-5h, optional): DOCX rendering. Same content, .docx output for users who need to upload to ATS systems that prefer DOCX.
-
-**Failure modes to handle:**
-
-- LLM produces tailored content that doesn't fit on one page → render shows overflow warning, suggest user remove some bullets
-- LLM fabricates a skill → verification catches, blocks save, surfaces to user
-- LLM removes a critical bullet user wanted → "Revert this change" puts it back
-- ATS parser still rejects → out of scope for v1, document as known limitation, log which job's ATS failed for future research
-
-**Dependencies (must ship before Phase 2G.1 can start):**
-
-- Phase 2F (Vercel deploy) — tailoring is a feature users do on production, not localhost
-- Cerebras provider (Phase 2G.0) — for 70b quota capacity
-- v3 enrichment backfill complete — for high-quality skills array on job rows that tailoring will target
-
-**Not in scope for Phase 2G (deferred to Phase 2H+):**
-
-- Auto-apply (Playwright automation submitting the tailored resume) — separate massive phase
-- Resume version history beyond master + most-recent-tailored — keep it simple
-- Multi-master support (different masters for different career tracks)
-- A/B testing different tailoring strategies — too early, no signal yet
-
-**Defining "done" for Phase 2G:**
-
-A user can click a match on their dashboard, click "Tailor for this job," see the master and tailored versions side-by-side with all changes highlighted, revert any change they disagree with, and download a clean PDF that a senior recruiter would read and not immediately suspect was AI-generated. Verification catches 100% of fabricated skills and >95% of fabricated bullets (measured against a hand-labeled test set of 50 generations).
+**Definition of done:** A user can click "Tailor for this job" from any dashboard match, see master + tailored side-by-side with changes highlighted, revert any disagreement, download clean PDF. Verification catches 100% of fabricated skills and >95% of fabricated bullets.
 
 ### Phase 2H+ — Email digest, application auto-fill (Playwright), Gmail intelligence
 
@@ -490,13 +442,14 @@ A user can click a match on their dashboard, click "Tailor for this job," see th
 3. **Linear/Supabase (ashby)** — non-US, correctly rejected.
 4. **GitHub Actions Node 20 deprecation** — June 2026, bump actions/checkout + actions/setup-node.
 5. **Non-technical roles return `skills: []`** — ~60% of jobs. Matcher conditional relevance gate handles correctly.
-6. **DOCX resume upload** — not implemented, clear error returned. Phase 2E.5 continued work.
-7. **Enrichment log misleading** — `log.model` shows provider default (70b) while API actually receives override (8b-instant). Cosmetic only.
-8. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic.
-9. **Settings page resume card is read-only** — drag-drop upload exists at /onboarding/resume but not yet wired into /settings as a "replace resume" surface. Phase 2E.5 continued work.
-10. **pdf-parse v2 incompatible with Next.js bundled runtime** — fake worker .mjs module not found at runtime. Resolved Monday by switching to unpdf (serverless-friendly). Documented for future reference if anyone considers swapping back.
-11. **Cron cleanup occasionally times out on cold-start connection.** Self-healing on next run. Free-tier Supabase behavior, accepted.
-12. **LLM enrichment quality during v3 backfill** — v2 hallucinated tech skills on non-technical roles got bumped to v3 with tightened prompt (Monday). Re-enrichment runs ~120/day via cron, ~4 days for full backfill. Old v2 hallucinated matches will linger on dashboard until each job's v3 re-enrichment lands.
+6. **Enrichment log misleading** — `log.model` shows provider default (70b) while API actually receives override (8b-instant). Cosmetic only.
+7. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic.
+8. **Settings page resume card is read-only** — drag-drop upload exists at /onboarding/resume but not yet wired into /settings as a "replace resume" surface.
+9. **pdf-parse v2 incompatible with Next.js bundled runtime** — fake worker .mjs module not found at runtime. Resolved Monday by switching to unpdf (serverless-friendly). Documented for future reference if anyone considers swapping back.
+10. **Cron cleanup occasionally times out on cold-start connection.** Self-healing on next run. Free-tier Supabase behavior, accepted.
+11. **LLM enrichment v3 backfill in progress** — 810 NULL jobs still working through cron at ~120/day, expected complete approximately Friday June 5.
+12. **Reason text may briefly lag matcher scores after preference change** — reason regeneration runs via daily cron, not synchronously on save. After changing preferences, scores update immediately but reason explanations may still describe the previous state until tomorrow's cron. Accepted — scores are the primary signal, reasons are explanation. Documented behavior, not a bug.
+13. **`scripts/match-diagnostics.ts` hardcoded to count v2** — script reports v2 count but doesn't show v3 or NULL split. For real enrichment-version stats use an ad-hoc Prisma `groupBy({ by: ["enrichmentVersion"] })`. Will refactor when convenient.
 
 ### Recently resolved
 
@@ -512,58 +465,64 @@ A user can click a match on their dashboard, click "Tailor for this job," see th
 - ✅ Prefs overwrite prevention shipped Monday (schema min(3) keywords + form dirty-field counter)
 - ✅ Enrichment v3 shipped Monday (tightened prompt, stops LLM hallucinating skills on non-technical roles)
 - ✅ Phase 2E.3.B mobile responsive shipped Monday (AppShell hamburger + dashboard + settings)
-- ✅ AI-suggested keywords on onboarding form shipped Monday (server+client split on /onboarding/preferences)
-- ✅ Phase 2E.5 partial shipped Monday (User schema split + welcome + profile + drag-drop resume upload, all end-to-end with unpdf + 70b parse)
-- ✅ Edit personal info in /settings shipped Tuesday (PersonalInfoSection with view/edit toggle, useTransition save, AnimatePresence transitions)
-- ✅ Parser architectural fix shipped Tuesday (SKILL_BLOCKLIST + SKILL_CANONICAL code-side cleaning, RESUME_PARSE_VERSION v2→v3, test harness for A/B verification)
-- ✅ Phase 2G architectural spec documented Tuesday (expanded from 4-line placeholder to full 5-sub-phase plan, ~25-35h total estimate)
-- ✅ Onboarding progress indicator shipped Tuesday (thin bar across all 4 routes, AuthShell.header prop)
-- ✅ User.firstName + lastName tightened to non-null Tuesday (schema migration + email-prefix fallback removed from dashboard + settings)
+- ✅ AI-suggested keywords on onboarding form shipped Monday (server+client split)
+- ✅ Phase 2E.5 partial shipped Monday (User schema split + welcome + profile + drag-drop resume upload, end-to-end with unpdf + 70b parse)
+- ✅ Edit personal info in /settings shipped Tuesday (PersonalInfoSection with view/edit toggle, useTransition save)
+- ✅ Parser architectural fix shipped Tuesday (SKILL_BLOCKLIST + SKILL_CANONICAL code-side cleaning, parse v2→v3, test harness)
+- ✅ Phase 2G architectural spec documented Tuesday (full 5-sub-phase plan, ~25-35h total estimate)
+- ✅ Onboarding progress indicator shipped Tuesday (thin bar across 4 routes, AuthShell.header prop)
+- ✅ User.firstName/lastName tightened to non-null Tuesday (schema migration + email-prefix fallback removed)
+- ✅ Suggested target roles chips shipped Wednesday (parsedJson.currentRole + workHistory titles, dedupe, cap 5, both onboarding + settings)
+- ✅ Country picker for phone normalization shipped Wednesday (curated 250-entry ISO list, country-aware longest-prefix-match dial code stripping in normalizer, real bug caught mid-test where blind prepend created +9115618877710 corruption)
+- ✅ DOCX upload support shipped Wednesday (mammoth.extractRawText, closes known issue #6, workHistory schema null-tolerance fix discovered during DOCX test)
+- ✅ Strict-ordering routing guards shipped Wednesday (centralized in src/server/lib/onboarding.ts, dashboard + 3 onboarding pages enforce profile→resume→preferences order with revisit-allowed for completed steps)
+- ✅ **Matcher cache invalidation + synchronous re-match on save shipped Wednesday evening** — content-addressed matchVersion with SHA256 hash + synchronous matcher trigger on preferences + resume save actions. Closes the most important product-level bug discovered to date — dashboard scores were frozen for any user iterating, completely breaking the iteration loop. UI now shows real-time feedback: "Saving and re-matching jobs…" → "Saved. Re-scored X jobs · Y above threshold."
 
 ---
 
 ## 8. CRITICAL FILES (current repo state)
 
-| Concern              | Path                                                                                                                                                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Front door           | `README.md`                                                                                                                                                                                                                             |
-| System map           | `ARCHITECTURE.md`                                                                                                                                                                                                                       |
-| Working rhythm       | `COLLABORATION.md`                                                                                                                                                                                                                      |
-| Build narrative      | `AI_JOB_OS_SESSION_JOURNAL.md`                                                                                                                                                                                                          |
-| Vision               | `VISION.md`                                                                                                                                                                                                                             |
-| Decisions            | `docs/adr/*.md`                                                                                                                                                                                                                         |
-| Design DNA           | `docs/design/principles.md`                                                                                                                                                                                                             |
-| Cron runbook         | `docs/runbooks/cron.md`                                                                                                                                                                                                                 |
-| Design tokens        | `src/styles/tokens.ts`, `src/app/globals.css`                                                                                                                                                                                           |
-| Prisma schema        | `prisma/schema.prisma`                                                                                                                                                                                                                  |
-| SQL triggers         | `prisma/sql/0001_auth_signup_trigger.sql`                                                                                                                                                                                               |
-| Auth                 | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts`                                                                                                                                                    |
-| Preferences action   | `src/server/actions/preferences.ts` (takes optional redirectTo)                                                                                                                                                                         |
-| Profile action       | `src/server/actions/profile.ts` (saveProfileAction with Zod-normalized phone)                                                                                                                                                           |
-| Onboarding prefs     | `src/app/onboarding/preferences/{page,_components/preferences-client-form}.tsx` (server+client split, suggested chips)                                                                                                                  |
-| Onboarding welcome   | `src/app/onboarding/welcome/page.tsx` (3-step preview, completion check)                                                                                                                                                                |
-| Onboarding profile   | `src/app/onboarding/profile/{page,_components/profile-client-form}.tsx` (firstName/lastName/phone with Y-lenient normalization)                                                                                                         |
-| Onboarding resume    | `src/app/onboarding/resume/{page,_components/resume-upload-form}.tsx` (native HTML5 drag-drop, 4-state machine)                                                                                                                         |
-| AppShell layout      | `src/app/(app)/layout.tsx`                                                                                                                                                                                                              |
-| AppShell components  | `src/app/(app)/_components/{app-shell,user-menu}.tsx`                                                                                                                                                                                   |
-| AuthShell            | `src/components/auth/auth-shell.tsx` (brand mark + title + children + optional `header` slot for onboarding progress)                                                                                                                   |
-| Dashboard route      | `src/app/(app)/dashboard/page.tsx`                                                                                                                                                                                                      |
-| Dashboard components | `src/app/(app)/dashboard/_components/{match-card,match-list,empty-state,score-ring,score-breakdown}.tsx`                                                                                                                                |
-| Settings route       | `src/app/(app)/settings/page.tsx`                                                                                                                                                                                                       |
-| Settings form        | `src/app/(app)/settings/_components/{preferences-form,personal-info-section}.tsx`                                                                                                                                                       |
-| Match Server Actions | `src/server/actions/match.ts`                                                                                                                                                                                                           |
-| Resume upload action | `src/server/actions/resume.ts` (unpdf extraction, 70b parse, atomic master-switch)                                                                                                                                                      |
-| Resume parser        | `src/server/services/ai/parse-resume.ts` (v3 with SKILL_BLOCKLIST + SKILL_CANONICAL code-side cleaning)                                                                                                                                 |
-| Zod schemas          | `src/shared/schemas/{preferences,profile}.ts` (profile has E.164 phone transform + refine)                                                                                                                                              |
-| Suggestion data      | `src/shared/data/{role,location}-suggestions.ts`                                                                                                                                                                                        |
-| Reusable inputs      | `src/components/onboarding/{chip-input,experience-range,job-type-select,preference-toggle,progress}.tsx`                                                                                                                                |
-| Command palette      | `src/components/command-palette.tsx`                                                                                                                                                                                                    |
-| Scrapers             | `src/server/services/scrapers/{greenhouse,ashby,location,hash,rules}.ts`                                                                                                                                                                |
-| LLM provider         | `src/server/services/ai/{llm,groq-provider}.ts`                                                                                                                                                                                         |
-| Job enrichment       | `src/server/services/ai/enrich.ts`                                                                                                                                                                                                      |
-| Matcher              | `src/server/services/matcher/{score,filters,match,reason}.ts`                                                                                                                                                                           |
-| CLIs                 | `scripts/{scrape,cleanup,enrich,parse-resume,seed-master-resume,match,top-matches,reasons,show-reasons,show-breakdown,show-parsed-skills,show-prefs,show-bad-match,show-cluster,match-diagnostics,test-enrich-prompt,undismiss-all}.ts` |
-| GitHub Actions       | `.github/workflows/{daily-cron,daily-enrich}.yml`                                                                                                                                                                                       |
+| Concern              | Path                                                                                                                                                                                                                                                      |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Front door           | `README.md`                                                                                                                                                                                                                                               |
+| System map           | `ARCHITECTURE.md`                                                                                                                                                                                                                                         |
+| Working rhythm       | `COLLABORATION.md`                                                                                                                                                                                                                                        |
+| Build narrative      | `AI_JOB_OS_SESSION_JOURNAL.md`                                                                                                                                                                                                                            |
+| Vision               | `VISION.md`                                                                                                                                                                                                                                               |
+| Decisions            | `docs/adr/*.md`                                                                                                                                                                                                                                           |
+| Design DNA           | `docs/design/principles.md`                                                                                                                                                                                                                               |
+| Cron runbook         | `docs/runbooks/cron.md`                                                                                                                                                                                                                                   |
+| Design tokens        | `src/styles/tokens.ts`, `src/app/globals.css`                                                                                                                                                                                                             |
+| Prisma schema        | `prisma/schema.prisma`                                                                                                                                                                                                                                    |
+| SQL triggers         | `prisma/sql/0001_auth_signup_trigger.sql`                                                                                                                                                                                                                 |
+| Auth                 | `src/server/actions/auth.ts`, `src/app/login/*`, `src/app/signup/*`, `middleware.ts`                                                                                                                                                                      |
+| Preferences action   | `src/server/actions/preferences.ts` (savePreferencesAction with optional redirectTo, triggers matcher synchronously after upsert)                                                                                                                         |
+| Profile action       | `src/server/actions/profile.ts` (saveProfileAction with country-aware E.164 normalization)                                                                                                                                                                |
+| Resume upload action | `src/server/actions/resume.ts` (MIME-routed extraction: unpdf for PDF, mammoth for DOCX, plain text. Atomic master-switch. Triggers matcher synchronously after switch.)                                                                                  |
+| Match actions        | `src/server/actions/match.ts`                                                                                                                                                                                                                             |
+| Onboarding helpers   | `src/server/lib/onboarding.ts` (getNextOnboardingStep + canAccessStep — centralized routing rules)                                                                                                                                                        |
+| Onboarding welcome   | `src/app/onboarding/welcome/page.tsx`                                                                                                                                                                                                                     |
+| Onboarding profile   | `src/app/onboarding/profile/{page,_components/profile-client-form}.tsx` (CountryPicker paired with phone input)                                                                                                                                           |
+| Onboarding resume    | `src/app/onboarding/resume/{page,_components/resume-upload-form}.tsx` (PDF + DOCX accept; canAccessStep gate)                                                                                                                                             |
+| Onboarding prefs     | `src/app/onboarding/preferences/{page,_components/preferences-client-form}.tsx` (suggestedSkills + suggestedTargetRoles; canAccessStep gate; motion.button replaces SubmitButton)                                                                         |
+| AppShell layout      | `src/app/(app)/layout.tsx`                                                                                                                                                                                                                                |
+| AppShell components  | `src/app/(app)/_components/{app-shell,user-menu}.tsx`                                                                                                                                                                                                     |
+| AuthShell            | `src/components/auth/auth-shell.tsx` (brand + title + children + optional `header` slot for progress indicator)                                                                                                                                           |
+| Dashboard route      | `src/app/(app)/dashboard/page.tsx` (uses getNextOnboardingStep helper for routing)                                                                                                                                                                        |
+| Dashboard components | `src/app/(app)/dashboard/_components/{match-card,match-list,empty-state,score-ring,score-breakdown}.tsx`                                                                                                                                                  |
+| Settings route       | `src/app/(app)/settings/page.tsx` (passes country + suggestedTargetRoles)                                                                                                                                                                                 |
+| Settings form        | `src/app/(app)/settings/_components/{preferences-form,personal-info-section}.tsx` (matchSummary state, enriched toast, CountryPicker in PersonalInfoSection)                                                                                              |
+| Resume parser        | `src/server/services/ai/parse-resume.ts` (v3 with SKILL_BLOCKLIST + SKILL_CANONICAL code-side cleaning; workHistory.title/company nullable)                                                                                                               |
+| Matcher              | `src/server/services/matcher/{score,filters,match,reason}.ts` (match.ts exports computeMatchVersion; content-addressed cache)                                                                                                                             |
+| Zod schemas          | `src/shared/schemas/{preferences,profile}.ts` (profile has country-aware E.164 phone transform with longest-prefix-match dial code stripping)                                                                                                             |
+| Suggestion data      | `src/shared/data/{role,location,countries}-suggestions.ts` (countries.ts = full ISO 3166-1 list with name + dial)                                                                                                                                         |
+| Reusable inputs      | `src/components/onboarding/{chip-input,country-picker,experience-range,job-type-select,preference-toggle,progress}.tsx`                                                                                                                                   |
+| Command palette      | `src/components/command-palette.tsx`                                                                                                                                                                                                                      |
+| Scrapers             | `src/server/services/scrapers/{greenhouse,ashby,location,hash,rules}.ts`                                                                                                                                                                                  |
+| LLM provider         | `src/server/services/ai/{llm,groq-provider}.ts`                                                                                                                                                                                                           |
+| Job enrichment       | `src/server/services/ai/enrich.ts`                                                                                                                                                                                                                        |
+| CLIs                 | `scripts/{scrape,cleanup,enrich,parse-resume,seed-master-resume,match,top-matches,reasons,show-reasons,show-breakdown,show-parsed-skills,show-prefs,show-bad-match,show-cluster,match-diagnostics,test-enrich-prompt,test-parse-prompt,undismiss-all}.ts` |
+| GitHub Actions       | `.github/workflows/{daily-cron,daily-enrich}.yml`                                                                                                                                                                                                         |
 
 ---
 
@@ -597,36 +556,62 @@ When you update CONTEXT.md, re-upload to the project to replace.
 
 ## 11. NEXT SESSION CHECKLIST (priority order)
 
-Tuesday (2026-06-02) shipped 6 commits in a disciplined 3-hour session: edit personal info in /settings (PersonalInfoSection with view/edit toggle), parser architectural fix (SKILL_BLOCKLIST + SKILL_CANONICAL replacing prompt-engineering attempts that over-pruned real skills), Phase 2G architectural spec expanded from 4-line placeholder to full plan, onboarding progress indicator across all 4 routes (AuthShell.header prop), and firstName/lastName tightened to non-null (schema migration + email-prefix fallback removal).
+Wednesday (2026-06-03) shipped 6 commits in a long, disciplined session:
 
-Wednesday (2026-06-03) starting with 3-hour budget. Section 11 cleanup (this update) followed by one polish ship.
+1. CONTEXT.md surgical refresh (sections 1, 3, 4, 5, 6, 7, 8, 11)
+2. Suggested target roles chips on onboarding + settings (~1h)
+3. Country picker for phone normalization (~2h, with mid-test corruption-bug catch)
+4. DOCX upload support via mammoth (~1.5h)
+5. Strict-ordering onboarding routing guards (~1h)
+6. **Matcher cache invalidation + synchronous re-match on save** — the most important commit of the week. User flagged dashboard-frozen symptom; agent caught architectural bug present since Phase 2E.2.A. Content-addressed matchVersion via SHA256 hash + sync matcher trigger on save actions. Real iteration loop closed.
 
-**Next session priorities:**
+Phase 2E.5 is now **COMPLETE for pre-deploy bar.** Only fuzzy-matching whitelist for parser cleaning remains (post-deploy, ~4-6h when real user data informs tuning).
 
-1. **Section 11 cleanup** (~20 min) — refresh this section to reflect Tuesday's 6 ships and Wednesday's plan. (Currently doing.)
-2. **Suggested target roles from resume.currentRole** (~1h) — same UX pattern as the already-shipped suggested skills chips. Surface up to 5 candidate target roles from parsedJson.currentRole plus parsedJson.workHistory[].title (deduped, lowercase). Render above the targetRoles ChipInput. Wednesday's primary ship.
-3. **Verify v3 enrichment backfill progress.** Run `scripts/match-diagnostics.ts` to see v2-vs-v3 count split. Target ~482 v2 jobs re-enriched over ~4 days. Tuesday was day 2 of backfill, completing approximately Friday June 5.
-4. **Country picker for phone** (~2h) — currently defaults to +1 if no country code, but international workers need a proper picker. Phase 2E.5 continued.
-5. **DOCX upload support** (~2h) — currently PDF only, known issue #6. Mammoth library for .docx text extraction. Phase 2E.5 continued.
-6. **Routing guard hardening** (~1h) — partial-completion edge cases not all covered. Phase 2E.5 continued.
-7. **Phase 2F — Vercel deploy** (~3-4h) — gated on v3 backfill completion (~June 5-6) AND ideally one more Phase 2E.5 polish ship landed. Target window: this weekend.
+### Thursday plan
 
-**Not on critical path until later:**
+The only remaining priority before deploy is the v3 enrichment backfill. Then Phase 2F (Vercel deploy) becomes the next session's milestone.
 
-- Cerebras provider (Phase 2G dependency, ~2-3h)
-- Resume tailoring (Phase 2G full spec in Section 6, ~25-35h multi-session, gated on Phase 2F deploy)
+**Priorities for next session:**
+
+1. **Verify v3 enrichment backfill progress** (~5 min diagnostic) — Run an ad-hoc Prisma `groupBy({ by: ["enrichmentVersion"] })` to see v2 / v3 / NULL counts. Target: backfill complete by Friday June 5. Today's state: 770 v3, 1 v2, 810 NULL.
+
+2. **Phase 2F — Vercel deploy** (~3-4h) — Once backfill is done:
+   - Env var migration to Vercel project settings (DATABASE_URL, DIRECT_URL, all Supabase keys, Sentry DSN, PostHog key, GROQ_API_KEY, Resend keys)
+   - Verify Server Actions work on Vercel (they're node runtime by default, should be fine)
+   - Check upload limits — 5 MB resume upload + body size on Vercel free tier
+   - Set up Supabase auth callback URL for production domain
+   - Configure Resend SMTP for production emails
+   - Deploy a preview branch first, smoke-test the full onboarding flow + dashboard, then promote to production
+   - Update README + CONTEXT with the live URL
+
+3. **Polish items if Phase 2F isn't ready** (~1-2h each, defensive ground):
+   - Resume re-upload from /settings (currently read-only there; the action exists, just not wired)
+   - Loading skeletons + error boundaries at dashboard polish level
+   - Accessibility pass (ARIA, keyboard nav, focus management)
+   - Keyboard shortcuts on dashboard (j/k navigation, a/d for apply/dismiss)
+
+**Not on critical path until Phase 2F lands:**
+
+- Cerebras provider (Phase 2G.0 dependency, ~2-3h)
+- Resume tailoring (Phase 2G full spec in Section 6, ~25-35h multi-session)
 - Email digest / Playwright application auto-fill (Phase 2H)
 - Phase 2I application tracker
-- Fuzzy-matching whitelist for parser cleaning (~4-6h, post-deploy when real user data informs tuning)
+- Fuzzy-matching whitelist for parser cleaning (~4-6h, post-deploy)
 
-**Reflection notes for future sessions:**
+### Reflection notes — patterns worth remembering
 
-Tuesday's discipline contrast with Monday's marathon was the story. Monday: 9 commits in ~10-11 hours, near-miss with `prisma migrate dev`, multiple "keep going" reflexes. Tuesday: 6 commits in ~3 hours, two explicit pushback moments that improved the work (one on time-checking accuracy, one on the parser fix's generalizability — "will this work for new users?"). **Sustainable rhythm is 2-4 hour focused sessions. The bar should rise each session, not the hour count.**
+Monday (~10-11h, 9 commits): near-miss with `prisma migrate dev` that would have wiped DB. Schema split + onboarding pipeline + mobile responsive shipped end-to-end.
 
-Five specific patterns worth remembering:
+Tuesday (~3h, 6 commits): disciplined. Parser fix discovered architectural lesson — "LLM prompts are extraction tools, not quality filters." Two explicit user pushbacks improved the work (timestamp accuracy + generalizability check).
+
+Wednesday (long, 6 commits, ended with the matcher fix): three of the six were straightforward 2E.5 ships. Then user flagged the frozen-dashboard symptom and the session pivoted to architectural correction. The matcher cache bug had been present since Phase 2E.2.A — months. Survived because nobody ran the system end-to-end as a real user iterating with preferences.
+
+**Seven specific patterns worth remembering:**
 
 1. **Multi-line Node `-e` scripts have backtick escape problems.** Write `.mjs` scripts to disk instead, then `node /tmp/patch.mjs`. Safer for multi-anchor patches.
 2. **Commitlint enforces subject-case lowercase.** "ai-suggested" not "AI-suggested" in commit subjects.
-3. **`prisma db push` is the workflow for this project — NOT `prisma migrate dev`.** db push syncs schema without writing migration history files. migrate dev would offer destructive reset due to existing drift. Always pre-flight DB-touching schema changes with a NULL/integrity check before pressing y.
-4. **LLM prompts are extraction tools, not quality filters.** Tuesday's parser fix: two iterations trying to teach the 70b model to filter "noise" caused it to drop 7-8 real skills (numpy, pandas, react, etc.). The fix was to revert the prompt to "extract everything verbatim" and move filtering to deterministic code (Set + Record lookup). Pattern generalizes: when the LLM is dropping real content, the right answer is often "ask less of the LLM, do more in code."
+3. **`prisma db push` is the workflow for this project — NEVER `prisma migrate dev`.** migrate dev would offer destructive reset due to existing drift. Always pre-flight DB-touching schema changes with a NULL/integrity check before pressing y.
+4. **LLM prompts are extraction tools, not quality filters.** Tuesday's parser fix: two prompt iterations trying to teach the 70b model to filter "noise" caused it to drop 7-8 real skills (numpy, pandas, react, etc.). Real fix: revert prompt to "extract everything verbatim," move filtering to deterministic code (Set + Record lookup). Pattern generalizes: when the LLM is dropping real content, the right answer is often "ask less of the LLM, do more in code."
 5. **Timestamp accuracy matters for trust.** When agent guesses wall-clock from message timing and gets it wrong, it creates false urgency. Rule: agent does not state wall-clock; user provides it when needed.
+6. **Audit the core product loop yourself, periodically — don't just work through queued features.** The matcher cache bug survived months because nobody ran the system end-to-end as a real user iterating. Section 11 priorities are a queue, not a quality bar. Working through the queue while the central product loop is broken is a real failure mode. Periodic system-level audit ("does the dashboard actually update when I change keywords?") is required, not optional.
+7. **When user flags a symptom, don't accept the first fix that occurs. Run it against the bar twice.** Tonight: agent's first proposal was "drop the skip-if-exists logic, always re-score." User pushed back with "rethink twice — is this the real fix per the bar?" Second analysis pass surfaced the actual correctness mechanism (content-addressed matchVersion via input hash) — preserves idempotency, fixes invalidation, self-heals. Lazy fix vs Stripe-grade fix. User pushback forced the second pass and the better outcome.
