@@ -6,7 +6,11 @@ import { logger } from "@/server/lib/logger";
 import { parseResume, RESUME_PARSE_VERSION } from "@/server/services/ai/parse-resume";
 import { matchJobsForUser } from "@/server/services/matcher/match";
 
-type ActionResult =
+type RequestUploadUrlResult =
+  | { error: string }
+  | { success: true; uploadUrl: string; storagePath: string; token: string };
+
+type UploadResult =
   | { error: string }
   | {
       success: true;
@@ -14,25 +18,53 @@ type ActionResult =
       matchSummary?: { jobsConsidered: number; upserted: number; scoredAbove: number };
     };
 
-const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB — also enforced at bucket level
 const ALLOWED_MIME = new Set([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // docx
   "text/plain",
 ]);
+const RESUMES_BUCKET = "resumes";
 
 /**
- * Upload a resume, parse it via LLM, store as the user's new master.
- *
- * Master-switching is non-destructive: the previous master row stays in DB
- * with isMaster=false. This preserves provenance for any tailored resumes
- * (TailoredResume.masterResumeId, Phase 2G) derived from older versions.
+ * Sanitize a user-provided filename for use in a storage path.
+ * Replaces anything that isn't alphanumeric, dot, dash, or underscore with
+ * underscore. Path traversal prevention: drops any "/" or ".." sequences.
+ * Falls back to "resume" if the sanitized name is empty.
  */
-export async function uploadMasterResumeAction(formData: FormData): Promise<ActionResult> {
-  const file = formData.get("file");
-  if (!(file instanceof File)) return { error: "No file provided" };
-  if (file.size > MAX_FILE_BYTES) return { error: "File too large (max 5 MB)" };
-  if (!ALLOWED_MIME.has(file.type))
+function sanitizeFilename(name: string): string {
+  const cleaned = name
+    .replace(/[/\\]/g, "_")
+    .replace(/\.\./g, "_")
+    .replace(/[^a-zA-Z0-9._-]/g, "_");
+  return cleaned.length > 0 ? cleaned : "resume";
+}
+
+/**
+ * Step 1 of the upload flow. Validates the request and generates a signed
+ * Supabase Storage upload URL scoped to the user's own folder via RLS.
+ *
+ * The client then PUTs the file directly to this URL (browser → Supabase),
+ * bypassing the Vercel 4.5 MB body limit entirely.
+ *
+ * Validation:
+ * - User is authenticated
+ * - filename is non-empty
+ * - fileSize <= 5 MB
+ * - contentType is in the allowed set
+ *
+ * Returns the signed URL + storagePath. The storagePath is what the client
+ * passes to uploadMasterResumeAction in Step 3.
+ */
+export async function requestResumeUploadUrlAction(
+  filename: string,
+  fileSize: number,
+  contentType: string,
+): Promise<RequestUploadUrlResult> {
+  if (!filename || filename.length === 0) return { error: "Filename is required" };
+  if (fileSize <= 0) return { error: "File appears empty" };
+  if (fileSize > MAX_FILE_BYTES) return { error: "File too large (max 5 MB)" };
+  if (!ALLOWED_MIME.has(contentType))
     return { error: "Unsupported file type. Upload PDF, DOCX, or plain text." };
 
   const supabase = await createSupabaseServerClient();
@@ -41,6 +73,68 @@ export async function uploadMasterResumeAction(formData: FormData): Promise<Acti
   } = await supabase.auth.getUser();
   if (!authUser) return { error: "Not authenticated" };
 
+  const safeName = sanitizeFilename(filename);
+  const timestamp = Date.now();
+  const storagePath = `${authUser.id}/${timestamp}-${safeName}`;
+
+  const { data, error } = await supabase.storage
+    .from(RESUMES_BUCKET)
+    .createSignedUploadUrl(storagePath);
+
+  if (error || !data) {
+    logger.error(
+      { authId: authUser.id, err: error?.message ?? "no data" },
+      "resume.upload_url.failed",
+    );
+    return { error: "Couldn't prepare upload. Try again." };
+  }
+
+  logger.info(
+    { authId: authUser.id, storagePath, fileSize, contentType },
+    "resume.upload_url.created",
+  );
+
+  return {
+    success: true,
+    uploadUrl: data.signedUrl,
+    storagePath: data.path,
+    token: data.token,
+  };
+}
+
+/**
+ * Step 3 of the upload flow. After the client has uploaded the file to
+ * Supabase Storage via the signed URL, this action downloads it server-side,
+ * extracts text, parses via LLM, persists as the new master resume, and
+ * triggers the matcher.
+ *
+ * Master-switching is non-destructive: the previous master row stays in DB
+ * with isMaster=false. This preserves provenance for any tailored resumes
+ * (TailoredResume.masterResumeId, Phase 2G) derived from older versions.
+ *
+ * The uploaded file is DELETED from Supabase Storage in a finally block
+ * (success OR failure). Storage is a transit zone, not a destination —
+ * net usage per upload is zero. This keeps us well under the 1 GB free-tier
+ * storage quota even at scale.
+ */
+export async function uploadMasterResumeAction(storagePath: string): Promise<UploadResult> {
+  if (!storagePath || typeof storagePath !== "string") return { error: "Invalid storage path" };
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+  if (!authUser) return { error: "Not authenticated" };
+
+  // Defense in depth: verify the path starts with this user's authId.
+  // RLS would also reject this, but failing fast in app code gives a
+  // clearer error message than a generic storage permission error.
+  const expectedPrefix = `${authUser.id}/`;
+  if (!storagePath.startsWith(expectedPrefix)) {
+    logger.warn({ authId: authUser.id, storagePath }, "resume.upload.path_mismatch");
+    return { error: "Storage path doesn't belong to you" };
+  }
+
   const appUser = await prisma.user.findUnique({ where: { authId: authUser.id } });
   if (!appUser) {
     logger.error({ authId: authUser.id }, "resume.upload.user_not_found");
@@ -48,17 +142,67 @@ export async function uploadMasterResumeAction(formData: FormData): Promise<Acti
   }
 
   let rawText: string;
+  let fileName: string;
+  let fileSize: number;
+  let contentType: string;
+
+  // Outer try captures download + processing failures, but cleanup ALWAYS
+  // runs via the finally block so we don't leave orphaned files in Storage.
   try {
-    rawText = await extractText(file);
-  } catch (err) {
-    logger.error(
-      { err: (err as Error).message, fileName: file.name },
-      "resume.upload.extract_failed",
-    );
-    return { error: "Couldn't read the file. Try a different format." };
-  }
-  if (rawText.trim().length < 100) {
-    return { error: "Resume looks empty or unreadable. Try a different file." };
+    // Download the file from Supabase Storage
+    const { data: fileBlob, error: downloadErr } = await supabase.storage
+      .from(RESUMES_BUCKET)
+      .download(storagePath);
+
+    if (downloadErr || !fileBlob) {
+      logger.error(
+        { authId: authUser.id, storagePath, err: downloadErr?.message },
+        "resume.upload.download_failed",
+      );
+      return { error: "Couldn't read the uploaded file. Try again." };
+    }
+
+    fileSize = fileBlob.size;
+    contentType = fileBlob.type;
+    // Filename: take the timestamp-name portion of the storage path
+    const pathParts = storagePath.split("/");
+    fileName = pathParts[pathParts.length - 1] ?? "resume";
+
+    if (fileSize > MAX_FILE_BYTES) {
+      return { error: "File too large (max 5 MB)" };
+    }
+    if (!ALLOWED_MIME.has(contentType)) {
+      return { error: "Unsupported file type. Upload PDF, DOCX, or plain text." };
+    }
+
+    // Extract text from the file
+    try {
+      rawText = await extractText(fileBlob, contentType);
+    } catch (err) {
+      logger.error({ err: (err as Error).message, fileName }, "resume.upload.extract_failed");
+      return { error: "Couldn't read the file. Try a different format." };
+    }
+
+    if (rawText.trim().length < 100) {
+      return { error: "Resume looks empty or unreadable. Try a different file." };
+    }
+  } finally {
+    // Cleanup: delete the file from Storage regardless of success or failure.
+    // We don't await this in a way that blocks the response — fire and
+    // forget. If it fails the storage will eventually be cleaned up via
+    // bucket lifecycle policies (future Phase 2H work) or we can add a
+    // periodic cleanup script. Worst case: 5 MB orphan per failed upload.
+    void supabase.storage
+      .from(RESUMES_BUCKET)
+      .remove([storagePath])
+      .then((res) => {
+        if (res.error) {
+          logger.warn(
+            { authId: authUser.id, storagePath, err: res.error.message },
+            "resume.upload.cleanup_failed",
+          );
+        }
+      });
   }
 
   let parsed;
@@ -87,8 +231,8 @@ export async function uploadMasterResumeAction(formData: FormData): Promise<Acti
         parsedJson: parsed,
         parsedAt: new Date(),
         parseVersion: RESUME_PARSE_VERSION,
-        fileName: file.name,
-        fileSize: file.size,
+        fileName,
+        fileSize,
       },
       select: { id: true },
     });
@@ -104,10 +248,11 @@ export async function uploadMasterResumeAction(formData: FormData): Promise<Acti
     logger.info({ userId: appUser.id, newMasterId: result.newId }, "resume.master.created");
   }
 
-  // Trigger re-match after resume upload. The new master's resumeId + parseVersion
-  // are part of the matchVersion hash, so all existing matches become stale-version
-  // and get re-scored against the new skills. Failures do NOT fail the upload —
-  // resume is persisted, daily cron will re-run matcher tomorrow if needed.
+  // Trigger re-match after resume upload. The new master's resumeId +
+  // parseVersion are part of the matchVersion hash, so all existing matches
+  // become stale-version and get re-scored against the new skills. Failures
+  // do NOT fail the upload — resume is persisted, daily cron will re-run
+  // matcher tomorrow if needed.
   let matchSummary: { jobsConsidered: number; upserted: number; scoredAbove: number } | undefined;
   try {
     const summary = await matchJobsForUser({ userId: appUser.id, force: true });
@@ -127,15 +272,15 @@ export async function uploadMasterResumeAction(formData: FormData): Promise<Acti
   return { success: true, resumeId: result.newId, matchSummary };
 }
 
-async function extractText(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer());
-  if (file.type === "text/plain") return buffer.toString("utf8");
-  if (file.type === "application/pdf") {
+async function extractText(fileBlob: Blob, contentType: string): Promise<string> {
+  const buffer = Buffer.from(await fileBlob.arrayBuffer());
+  if (contentType === "text/plain") return buffer.toString("utf8");
+  if (contentType === "application/pdf") {
     const { extractText: unpdfExtract } = await import("unpdf");
     const { text } = await unpdfExtract(new Uint8Array(buffer), { mergePages: true });
     return text;
   }
-  if (file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+  if (contentType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
     // Mammoth extracts the raw text content from a .docx file's XML structure.
     // We deliberately discard the HTML formatting output and use rawText only —
     // downstream the LLM parser works from plain text, not from formatting hints.
@@ -143,5 +288,5 @@ async function extractText(file: File): Promise<string> {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
   }
-  throw new Error(`Unsupported file type for extraction: ${file.type}`);
+  throw new Error(`Unsupported file type for extraction: ${contentType}`);
 }

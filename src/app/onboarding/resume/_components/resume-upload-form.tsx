@@ -8,7 +8,7 @@ import { Upload, FileText, CheckCircle2, ChevronLeft, X, Loader2 } from "lucide-
 import { AuthShell } from "@/components/auth/auth-shell";
 import { OnboardingProgress } from "@/components/onboarding/progress";
 import { AuthBanner } from "@/components/auth/auth-banner";
-import { uploadMasterResumeAction } from "@/server/actions/resume";
+import { uploadMasterResumeAction, requestResumeUploadUrlAction } from "@/server/actions/resume";
 import { spring } from "@/styles/tokens";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -48,13 +48,40 @@ export function ResumeUploadForm({ existingFileName }: { existingFileName: strin
 
     setState({ kind: "uploading", fileName: file.name });
 
-    const formData = new FormData();
-    formData.append("file", file);
-
     startTransition(async () => {
-      const res = await uploadMasterResumeAction(formData);
-      if ("error" in res) {
-        setState({ kind: "error", message: res.error });
+      // Step 1: Request a signed Supabase Storage upload URL.
+      // This is a small Server Action call (no file body) — well under
+      // the 4.5 MB Vercel limit.
+      const urlRes = await requestResumeUploadUrlAction(file.name, file.size, file.type);
+      if ("error" in urlRes) {
+        setState({ kind: "error", message: urlRes.error });
+        return;
+      }
+
+      // Step 2: PUT the file directly to Supabase Storage.
+      // This is browser -> Supabase, bypassing Vercel entirely, so the
+      // 4.5 MB body limit does NOT apply. RLS policies on the bucket
+      // enforce that the user can only write to their own folder.
+      const putRes = await fetch(urlRes.uploadUrl, {
+        method: "PUT",
+        body: file,
+        headers: { "Content-Type": file.type },
+      });
+      if (!putRes.ok) {
+        const detail = await putRes.text().catch(() => putRes.statusText);
+        setState({
+          kind: "error",
+          message: `Upload failed: ${detail.slice(0, 200) || putRes.statusText}`,
+        });
+        return;
+      }
+
+      // Step 3: Trigger server-side processing. The Server Action downloads
+      // the file from Storage, extracts text, parses via LLM, persists as
+      // the new master, triggers the matcher, and cleans up the Storage file.
+      const processRes = await uploadMasterResumeAction(urlRes.storagePath);
+      if ("error" in processRes) {
+        setState({ kind: "error", message: processRes.error });
         return;
       }
       setState({ kind: "success", fileName: file.name });
