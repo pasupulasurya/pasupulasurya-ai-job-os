@@ -10,7 +10,7 @@ import {
   LLMValidationError,
 } from "./llm";
 
-export const ENRICHMENT_VERSION = "groq-llama-3.1-8b-v3";
+export const ENRICHMENT_VERSION = "groq-llama-3.1-8b-v4";
 const ENRICHMENT_MODEL = "llama-3.1-8b-instant";
 const DESCRIPTION_TRUNCATE_CHARS = 2000;
 const MAX_SKILLS = 20;
@@ -63,6 +63,118 @@ function buildUserPrompt(title: string, description: string): string {
   ].join("\n");
 }
 
+// Context-aware skill blocklist. The v3 prompt explicitly tells the LLM to
+// return skills:[] for non-technical roles, but the LLM still hallucinates
+// AI-coded skills (~5% of the time) when the job title contains words like
+// "Technical Solutions" or "AI Account Executive". Tuesday's lesson:
+// prompts are extraction tools, not quality filters. Same architectural
+// pattern as SKILL_BLOCKLIST in parse-resume.ts — LLM extracts, code cleans.
+
+// Non-technical role title patterns (substrings, case-insensitive).
+// If the job title matches any of these, AI-coded skills get dropped.
+// Order doesn't matter; first-match wins. Keep narrow — false positives
+// (dropping a real ML role) are worse than false negatives (leaving one
+// hallucination in).
+const NON_TECH_TITLE_PATTERNS = [
+  "account executive",
+  "account manager",
+  "account director",
+  "accountant",
+  "accounting",
+  "sales development",
+  "sales operations",
+  "sales representative",
+  "sales engineer",
+  "recruiter",
+  "recruiting",
+  "talent acquisition",
+  "talent partner",
+  "legal counsel",
+  "general counsel",
+  "lawyer",
+  "paralegal",
+  "compliance",
+  "customer success",
+  "customer support",
+  "customer experience",
+  "marketing manager",
+  "content marketing",
+  "brand manager",
+  "growth marketing",
+  "partnerships",
+  "business development",
+  "biz dev",
+  "strategist",
+  "strategy lead",
+  "executive assistant",
+  "people operations",
+  "people partner",
+  "human resources",
+  "hr business partner",
+  "communications",
+  "public relations",
+  "facilities",
+  "office manager",
+  "administrative",
+];
+
+// AI-coded skills that get dropped if the title matches a non-tech pattern.
+// Conservative list: only skills that are NEVER legitimately required for
+// roles in NON_TECH_TITLE_PATTERNS. We deliberately exclude python, sql,
+// data science, analytics — those CAN be legitimate skills for finance,
+// accounting, or operations roles.
+const AI_CODED_HALLUCINATED_SKILLS = new Set([
+  "ai",
+  "artificial intelligence",
+  "ml",
+  "machine learning",
+  "deep learning",
+  "neural network",
+  "neural networks",
+  "llm",
+  "llms",
+  "large language model",
+  "large language models",
+  "nlp",
+  "natural language processing",
+  "computer vision",
+  "generative ai",
+  "genai",
+  "transformers",
+]);
+
+/**
+ * Drop AI-coded skills from non-technical roles. Returns the same shape
+ * as input. If the title doesn't match a non-tech pattern, returns input
+ * unchanged. If a skill is dropped, logs the action so we can audit.
+ */
+function applyContextAwareSkillBlocklist(
+  raw: Enrichment,
+  jobTitle: string,
+  jobId: string,
+): Enrichment {
+  const titleLower = jobTitle.toLowerCase();
+  const isNonTechRole = NON_TECH_TITLE_PATTERNS.some((p) => titleLower.includes(p));
+  if (!isNonTechRole) return raw;
+
+  const dropped: string[] = [];
+  const kept: string[] = [];
+  for (const skill of raw.skills) {
+    const skillLower = skill.toLowerCase().trim();
+    if (AI_CODED_HALLUCINATED_SKILLS.has(skillLower)) {
+      dropped.push(skill);
+    } else {
+      kept.push(skill);
+    }
+  }
+
+  if (dropped.length > 0) {
+    logger.info({ jobId, title: jobTitle, dropped, kept }, "ai.enrich.blocklist.applied");
+  }
+
+  return { ...raw, skills: kept };
+}
+
 function sanitize(raw: Enrichment): Enrichment {
   const skills = Array.from(
     new Set(raw.skills.map((s) => s.trim().toLowerCase()).filter((s) => s.length > 0)),
@@ -70,7 +182,12 @@ function sanitize(raw: Enrichment): Enrichment {
   return { ...raw, skills };
 }
 
-export const __internals = { buildUserPrompt, sanitize, SYSTEM_PROMPT };
+export const __internals = {
+  buildUserPrompt,
+  sanitize,
+  applyContextAwareSkillBlocklist,
+  SYSTEM_PROMPT,
+};
 
 export type EnrichOptions = {
   force?: boolean;
@@ -133,7 +250,8 @@ export async function enrichJobs(opts: EnrichOptions = {}): Promise<EnrichSummar
         maxTokens: 512,
         model: ENRICHMENT_MODEL,
       });
-      const clean = __internals.sanitize(raw);
+      const filtered = __internals.applyContextAwareSkillBlocklist(raw, job.title, job.id);
+      const clean = __internals.sanitize(filtered);
       if (dryRun) {
         logger.info({ jobId: job.id, ...clean }, "ai.enrich.job.dryrun");
       } else {
