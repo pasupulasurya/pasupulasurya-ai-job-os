@@ -167,7 +167,6 @@ export function PreferencesForm({
       salaryMin,
       currentEmployment,
       avoidCompanies,
-      onboardingComplete: true,
     };
 
     const parsed = preferencesSchema.safeParse(input);

@@ -53,7 +53,6 @@ export const preferencesSchema = z.object({
   avoidCompanies: z.array(z.string().min(1).max(80)).max(30).default([]),
 
   // Onboarding flag (client may set true on final step)
-  onboardingComplete: z.boolean().default(false),
 });
 
 export type PreferencesInput = z.infer<typeof preferencesSchema>;

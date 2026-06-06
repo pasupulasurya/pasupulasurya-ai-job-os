@@ -71,7 +71,6 @@ export async function savePreferencesAction(
         currentEmployment: parsed.data.currentEmployment,
         targetRoles: parsed.data.targetRoles,
         avoidCompanies: parsed.data.avoidCompanies,
-        onboardingComplete: parsed.data.onboardingComplete,
       },
     });
 
@@ -81,7 +80,6 @@ export async function savePreferencesAction(
         keywords: parsed.data.keywords.length,
         locations: parsed.data.locations.length,
         visaType: parsed.data.visaType,
-        onboardingComplete: parsed.data.onboardingComplete,
       },
       "preferences.save.completed",
     );
