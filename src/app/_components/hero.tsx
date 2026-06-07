@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ProductDemo } from "./product-demo";
 
 export function Hero() {
   return (
@@ -41,12 +42,8 @@ export function Hero() {
           </Link>
         </div>
 
-        {/* Live product-loop demo mounts here in the next chunk */}
-        <div className="border-border bg-card/40 mt-16 flex h-72 w-full max-w-md items-center justify-center rounded-2xl border">
-          <span className="text-text-tertiary text-xs tracking-widest uppercase">
-            Demo mounts here
-          </span>
-        </div>
+        {/* Live product-loop demo */}
+        <ProductDemo />
       </div>
     </section>
   );
