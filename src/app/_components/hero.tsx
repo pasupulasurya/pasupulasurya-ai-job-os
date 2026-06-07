@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ProductDemo } from "./product-demo";
 
 export function Hero() {
@@ -26,21 +25,6 @@ export function Hero() {
           We watch the companies that sponsor visas, read every posting with AI, and score each one
           against you — so you apply to the right roles, not all of them.
         </p>
-
-        <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
-          <Link
-            href="/signup"
-            className="bg-accent text-accent-foreground hover:bg-accent-hover rounded-md px-7 py-3 text-sm font-medium transition-colors"
-          >
-            Get started
-          </Link>
-          <Link
-            href="/login"
-            className="border-border-strong text-text-primary hover:bg-card rounded-md border px-7 py-3 text-sm font-medium transition-colors"
-          >
-            Sign in
-          </Link>
-        </div>
 
         {/* Live product-loop demo */}
         <ProductDemo />
