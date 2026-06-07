@@ -20,7 +20,17 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 export const EnrichmentSchema = z.object({
   seniority: z.enum(["entry", "mid", "senior", "staff"]).nullable(),
   experienceYears: z.number().int().min(0).max(40).nullable(),
-  skills: z.array(z.string()).max(MAX_SKILLS),
+  skills: z.preprocess((val) => {
+    if (!Array.isArray(val)) return val;
+    return Array.from(
+      new Set(
+        val
+          .filter((s): s is string => typeof s === "string")
+          .map((s) => s.trim().toLowerCase())
+          .filter((s) => s.length >= 2),
+      ),
+    );
+  }, z.array(z.string()).max(MAX_SKILLS)),
   sponsorsVisa: z.boolean().nullable(),
   stemOptFriendly: z.boolean().nullable(),
 });
