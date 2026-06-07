@@ -1,7 +1,7 @@
 # AI Job OS — Session Context
 
 > **Paste this file at the start of every new session with Claude.**
-> Last updated: 2026-06-07 Sunday morning (Phase 2F DEPLOY DAY — Zod dedupe fix shipped Sat, backfill at 86%, deploying today with self-healing cron handling residual)
+> Last updated: 2026-06-07 Sunday afternoon (Phase 2F DEPLOYED — production live at https://pasupulasurya-ai-job-os.vercel.app, 5 post-deploy bugs found + fixed during smoke test, 2 known issues remain. Thread closed — next session: see Section 13 Signoff Summary below.)
 
 For wider context, also point readers at:
 
@@ -73,8 +73,22 @@ One accent: `#0A84FF`. Lucide icons at stroke 1.5. Dark default, light is a port
   - **Signed URL upload flow (Fri) — Phase 2F deploy blocker resolved:** Vercel free + paid both have 4.5 MB hard request body limit. Our existing FormData upload would have 413'd on real-world 5 MB resumes in production. Fix: 3-step pattern with direct browser→Supabase Storage upload bypassing Vercel entirely. `requestResumeUploadUrlAction(filename, fileSize, contentType)` returns `{ uploadUrl, storagePath, token }` from `createSignedUploadUrl`. Client PUTs file body direct to Supabase. `uploadMasterResumeAction(storagePath: string)` downloads server-side, processes, deletes file in finally block. Storage is transit zone — net usage zero per upload. RLS-scoped to user's own folder (3 policies). No admin client needed. Tested end-to-end with real PDF.
   - **Schema cleanup (Fri):** Dropped 3 dead schema items after verification + diagnostic queries: Log model (0 rows all-time, Pino writes stdout+Sentry only), UserPreference.onboardingComplete column (never read for gating, dashboard uses keywords.length >= 3), ResumeVersion.pdfUrl + docxUrl columns (never populated, binary is discarded after text extraction). TypeScript caught 4 application-code references that grep missed.
   - **Zod preprocess dedupe fix (Sat, commit 19a93ec):** Resolved ~2-3% of jobs failing Zod validation with "Too big: expected array to have <=20 items" where the failure was caused by LLM returning duplicates + truncation fragments (e.g. "s" cut off at 512-token boundary) inflating the count past 20, not by genuinely having >20 unique meaningful skills. The existing sanitize() function had the right dedupe logic but ran AFTER validation — Zod rejected the whole job before sanitize could clean it. Fix: moved cleanup into the Zod schema itself via z.preprocess on the skills field (lowercase + trim + drop fragments <2 chars + dedupe via Set, THEN apply .max(20)). Verified against 8 real failure samples: 5/8 recover, 3/8 correctly remain rejected (genuinely 21+ unique meaningful skills = senior/staff jobs out of beta cohort scope). Drift caught + corrected in real time — user pushback on Chesterton's Fence question "why does MAX_SKILLS=20 exist" prevented lazy "just remove .max()" fix.
+  - **Sunday deploy day (2026-06-07) — Vercel import + production deployment + 5 post-deploy bug fixes.** Vercel account created Fri evening, project imported Sun morning. 13 env vars migrated (12 from .env.local via Import .env button + SENTRY_AUTH_TOKEN added manually). First deploy SUCCEEDED clean — Turbopack production build worked (concern from runbook Section 7 was unfounded), 9/9 static pages generated, all routes resolved. Production URL: https://pasupulasurya-ai-job-os.vercel.app. No-auth smoke test all green (landing, /login, /signup, /dashboard auth gate). Then 5 real bugs surfaced during deeper smoke test, each diagnosed + shipped:
+    1. **firstName/lastName NOT NULL constraint** (schema + DB): production fresh signups failed with "23502 null value in column firstName" because the on_auth_user_created Postgres trigger creates User rows with only id/authId/email — firstName + lastName are populated at /onboarding/profile submission. Schema had been declaring NOT NULL on these fields since Phase 2A, but the trigger never satisfied the contract. Local dev never hit this because we always signed up once and stayed onboarded. Fix: ALTER TABLE on production DB to DROP NOT NULL, schema.prisma updated to String? to match. Application code (onboarding.ts) already treated these as nullable defensively — TypeScript compile-clean with the change.
+    2. **loginAction post-login redirect hardcode** (commit 74ec1a7): `redirect("/onboarding/preferences")` was hardcoded at the end of loginAction regardless of user's actual onboarding state. Existing fully-onboarded users got bounced to preferences on every login. Fix: query user state via Prisma after sign-in, compute next step via getNextOnboardingStep, redirect to that (or /dashboard if fully onboarded — function returns null).
+    3. **Apply button popup blocker** (commit ce576af): `window.open(props.job.sourceUrl, "_blank")` was silently blocked by Chrome popup blocker (returned null). DB action still fired so button changed to "Applied" but no tab opened — user experienced "apply marks but doesn't navigate." Fix: <button> → <a target="_blank">, browser treats navigation as direct user click instead of popup.
+    4. **/auth/callback hardcoded next param** (commit 2b20f18): `const next = url.searchParams.get("next") ?? "/onboarding/preferences"` defaulted to preferences when no explicit next param was passed. Same hardcode bug pattern as #2 but at a different boundary. Plus signUpAction + magicLinkAction passed `?next=/onboarding/preferences` in emailRedirectTo, so even after fixing the default the explicit param would still skip welcome/profile/resume. Fix: callback now queries User row + computes destination via getNextOnboardingStep. signUpAction + magicLinkAction now omit ?next= so callback's state-driven routing fires.
+    5. **savePreferencesAction swallowing NEXT_REDIRECT** (commit 30ab98d): try/catch wrapping the entire action body caught Next.js's internal NEXT_REDIRECT signal as a regular error. Save would succeed (preferences.save.completed + matcher.run.complete fired in logs) then `redirect("/dashboard")` would throw NEXT_REDIRECT, get caught, and return generic "Something went wrong saving your preferences" to the UI — even though the save was committed. Fix: redirect() moved outside try/catch boundary so Next.js can intercept the throw correctly.
 
-**Total in DB (Sun morning 2026-06-07, 8:43 AM Central):** 1,708 active jobs (continued daily scraping adds ~35/day). 1,468 at v4 (86%). 239 NULL remaining. 1 v2 straggler. Today's UTC TPD already burned ~340 enrichments; remaining ~80-90 headroom. Tonight's 00:00 UTC reset (7 PM Central Sun) gives fresh 500k = enough to clear all 239 in one cron run. **Decision: deploy today with 86% backfill because matcher excludes NULLs (job.skills.length === 0 returns score 0) so production users never see them. Cron self-heals overnight.**
+  Also fixed during deploy day:
+  - **Landing CTAs were dead <button> elements** (commit fbe991a): "Get started" + "Learn more" had no onClick handlers — clicking did nothing. Replaced with <Link> components routing to /signup and /login.
+  - **Resend domain not verified** (no commit, config change): production hit Resend test-mode constraint — only allows sending to verified owner email. Friend signups blocked. Switched Supabase Auth from Custom SMTP (Resend) to built-in email pool. Sender becomes `noreply@mail.app.supabase.io`, rate-limited ~3-4/hour, fits beta scale. Resend stays in local dev. Domain verification deferred — user decided not to commit to $15/year domain without conviction the project will scale past beta.
+  - **Supabase Site URL was localhost** (config change): initial change Saturday didn't propagate to email templates. Re-saved Sunday afternoon — magic links now use Vercel URL.
+  - **TestingSurya git author issue** (config fix): commits were initially authored as "TestingSurya" (alt GitHub account), which Vercel rejected as non-team-member push. Fixed via `git config user.email suryaprakashreddy9908@gmail.com` + `git commit --amend --reset-author` + force-push.
+
+  **Total deploy day commits: 7** (74ec1a7 loginAction, fbe991a landing CTAs, ce576af apply button, 2b20f18 callback + signUp/magicLink, 30ab98d preferences redirect, plus 2 doc commits). Plus 1 manual SQL ALTER on production DB.
+
+**Total in DB (Sun afternoon 2026-06-07, ~2:50 PM Central):** 1,708 active jobs, 1,524 at v4 (89% — cron continued chugging through Sunday morning), 184 NULL remaining. Production deploy is LIVE. Real auth users created during smoke test: original suryaprakashreddy9908@gmail.com (May 24, fully onboarded), test+diag aliases (today, fresh signup state), suryaprakash.lbf226@gmail.com (today). Cron continues running on GitHub Actions schedule — Vercel deploy did NOT change cron infrastructure.
 
 ---
 
@@ -402,10 +416,13 @@ Real iteration loop closed.
 ✅ **Deploy runbook** — Fri shipped `docs/runbooks/deploy.md` (commit f83bcac). 5 pre-flight gates, full Vercel + Supabase config checklist, 7-step deploy sequence with preview-before-prod, rollback plan.
 ✅ **Vercel account created** — Fri evening, free Hobby plan via GitHub Continue. Project NOT yet imported (correctly waiting for backfill).
 
-✅ **v4 enrichment backfill at 86%** (Sun morning 2026-06-07). 239 NULLs remaining are TPD-blocked, will clear tonight via 00:00 UTC reset + scheduled cron. **Deploy gate revised Sunday morning after honest re-read:** matcher excludes NULLs (score.ts:85 `if (job.skills.length === 0) return { score: 0 }`), so production users NEVER see NULL jobs in their match results. Cron self-heals the 239 overnight without any user impact. 86% backfill is production-correct behavior. Deploying today (Sun afternoon target).
-✅ **Zod dedupe fix (commit 19a93ec)** — Sat shipped. Recovers ~2-3% of jobs that were stuck NULL due to LLM duplicates+fragments inflating past Zod max(20). Verified against 8 real failure samples.
+✅ **Phase 2F SHIPPED** (Sun 2026-06-07 ~10:30 AM Central). Production URL: https://pasupulasurya-ai-job-os.vercel.app. Vercel Hobby (free) tier. Auto-deploys main branch.
 
-⏳ **Vercel project import + env var migration + deploy execution** — Sunday afternoon work per docs/runbooks/deploy.md.
+✅ **Backfill at 89% by end of day** (1,524/1,708). 184 NULLs remain, will continue clearing via daily 12:00 UTC cron + tonight's TPD reset.
+
+✅ **5 post-deploy bugs found and fixed** during Sunday afternoon smoke test (see Section 2 above for full details + commit SHAs).
+
+⚠️ **Production has 2 known issues** at signoff (see Section 13 Signoff Summary). NOT blockers for the deploy itself — production is functionally correct for existing onboarded users. Fresh-user onboarding flow has unresolved routing issues that need fresh diagnosis next session.
 
 [ORIGINAL BLOCKER DOC PRESERVED FOR HISTORICAL CONTEXT BELOW]
 
@@ -718,6 +735,107 @@ Friday (long, 4 commits, late-night): Phase 2F deploy prep continued. Three real
 Saturday (extended, 1 commit shipped + 1 doc commit): Diagnosed Zod validation_failed pattern from full 60-min cron logs. Initial drift: agent claimed "1 job in 60 min" without checking — user corrected with "you are mixing two cases here it was a bigger number." Real metrics: ~300 jobs/run sustained at ~5/min, validation failures ~2.7%, transport failures ~0.7%. Throttle working correctly. User pushed back on agent's "just remove the .max(20)" lazy proposal with Chesterton's Fence question. Second analysis pass surfaced the real cause: sanitize() ran AFTER validation, should run BEFORE. Real fix: z.preprocess on skills field. Tested against 8 real failure samples (5/8 recover). Decision NOT to raise MAX_SKILLS=20 was product-grounded — user's beta cohort is non-senior, matcher arithmetic uses overlap/total, raising cap would silently dilute scores for content-rich postings. Drift #2 (lazy-first-proposal) caught and corrected by user.
 
 Sunday morning (deploy day): Backfill at 86%. Initial agent reaction was Drift #1 (push deploy to evening "for bar"). Honest re-read: matcher excludes NULLs (score.ts:85), so 239 remaining NULLs are invisible to users. Production behavior is correct at 86%. Cron self-heals overnight via 00:00 UTC TPD reset. Deploy gate revised mid-session to "production-correct behavior" rather than "zero NULLs." Two drifts caught and corrected within this session alone.
+
+Sunday afternoon (deploy + post-deploy): Vercel import + 13 env var migration went clean in ~30 min. First deploy succeeded on first attempt (Turbopack worked, 9/9 static pages, all routes resolved). Then 7 hours of post-deploy smoke test + bug fix iteration. Five real production bugs found + shipped (firstName/lastName NOT NULL, loginAction hardcoded redirect, apply button popup blocker, /auth/callback hardcoded next param, savePreferencesAction swallowing NEXT_REDIRECT). Three real drift catches by user during this stretch: (1) agent symptom-chased the firstName NOT NULL error toward ALTER TABLE without first asking why the constraint existed (Chesterton's Fence — user forced re-investigation that surfaced trigger vs schema architectural mismatch as the real root cause); (2) agent looped through fragmented file reads + anchor-based patches when fixing the apply button JSX, costing ~30 min of friction (user pushback "are you still holding the bar" forced acknowledgment + a structural anchor-based rewrite that actually worked); (3) agent kept proposing automation when manual edits would have been faster (user requested "no pre-check writeups, just do it" — agent's anxiety pattern of explaining-before-acting was the drift, ratcheted up the writing-to-action ratio in moments of uncertainty). At end of day user requested thread close due to context corrosion + frustration — fresh-user onboarding flow still has unresolved routing issues that need fresh-eyes diagnosis.
+
+## 13. SIGNOFF SUMMARY (next session START HERE)
+
+This section is the canonical state at thread close 2026-06-07 ~3 PM Central. Read this entire section before doing ANYTHING else in a new session.
+
+### Production live
+
+- URL: https://pasupulasurya-ai-job-os.vercel.app
+- Auto-deploys main on push (Vercel Hobby tier, free)
+- Cron continues on GitHub Actions (unchanged by deploy)
+- Production DB: Supabase project qzuryikctdammdwsijmc, same as local dev
+
+### Real account states in production (verified via SQL)
+
+- usr_98b04a8e6a854a0bb7ce8e04b4357922 (suryaprakashreddy9908@gmail.com): fully onboarded — firstName="Suryaprakash Reddy", lastName="Pasupula", 5 keywords, 6 ResumeVersion rows with 1 isMaster=true. Logs in with password. Lands on /dashboard correctly. This is the only verified-working flow on production.
+- usr_5b54df7c6a934fe4a90995a2bb3f2144 (suryaprakashreddy9908+vercelprod3@gmail.com): fresh user, firstName=NULL, lastName=NULL, no resume, no preferences. Created via curl signup during smoke test. authId e7949560-b981-4911-96de-ae50fb65271c.
+- d625bab5-c368-4eb1-9b4e-aa8e0fb45714 (suryaprakash.lbf226@gmail.com): fresh user from Sun PM E2E test — confirmed_at populated but never reached dashboard due to localhost-redirect bug in old magic link (since fixed). May have orphan public.User row or no row — verify before re-using.
+
+### What works end-to-end on production (verified)
+
+1. Landing page → "Get started" → /signup renders
+2. Landing page → "Sign in" → /login renders
+3. Password login for existing fully-onboarded user → /dashboard
+4. /dashboard renders top 10 matches with score rings, titles, reasons
+5. Apply button on dashboard opens job.sourceUrl in new tab + marks status applied
+6. Cmd+K command palette
+7. Cron continues running on existing schedule
+
+### What does NOT work yet (REAL bugs at signoff)
+
+**Bug A: Fresh signup routing skips welcome → profile → resume**
+
+- Reproduce: incognito → /signup → submit fresh email → click magic link → user lands on /onboarding/preferences instead of /onboarding/welcome
+- Despite: callback route was patched in commit 2b20f18 to compute destination via getNextOnboardingStep, which should send fresh users (firstName=NULL) to /onboarding/welcome
+- Hypothesis 1: deploy didn't actually take effect for the callback route (check git log + Vercel deployment status)
+- Hypothesis 2: getNextOnboardingStep has a bug that returns /onboarding/preferences for NULL firstName (unlikely — local tests passed)
+- Hypothesis 3: magic link emails sent BEFORE the Site URL config was saved are still in mailbox + still use old localhost redirect — verify by triggering a brand new signup AFTER confirming Vercel has deployed commit 2b20f18 to production
+- Hypothesis 4 (most likely): user has been testing with cached emails from earlier signups that predate the route fix. Need to send brand new email AFTER confirming deploy is live + Site URL saved + URL Configuration shows Vercel URL.
+
+**Bug B: Target roles autocomplete suggestions broken**
+
+- Reproduce: /onboarding/preferences → type in "target roles" chip input → no suggestions appear
+- Component: ChipInput in src/components/onboarding/chip-input.tsx
+- Suggestions are passed as suggestedTargetRoles prop from preferences/page.tsx (parsed from resume parsedJson.workHistory[].title and parsedJson.currentRole)
+- Verify: do parsed.workHistory entries actually have title strings? Or is parsedJson.workHistory empty for this user? Check the master resume row's parsedJson column directly.
+
+### Known follow-ups (NOT blockers, but should address before wider beta)
+
+**Resend domain verification** (deferred)
+
+- Current state: Supabase Auth uses built-in email pool (`noreply@mail.app.supabase.io`, ~3-4/hour rate cap)
+- This blocks: sending from a branded address, scaling past ~10 users
+- Real path forward: buy domain ($15/year on Vercel or Cloudflare), verify in Resend, swap Supabase Auth back to Custom SMTP. Or stay on built-in pool indefinitely if beta scale never grows beyond 10 friends.
+- User explicitly deferred domain purchase Sun afternoon — not committing $15/year without conviction project will scale.
+
+**TestingSurya git author in earlier commits**
+
+- Only the latest few commits (74ec1a7 onwards) are authored as pasupulasurya
+- Earlier commits in main branch history may still be authored as TestingSurya
+- Doesn't block Vercel deploys anymore (already pushing as pasupulasurya), but creates inconsistent commit history
+- Fix if desired: git rebase + filter-branch to rewrite all commits' author. Risky on shared history — only do this if no collaborators have pulled.
+
+**signUpAction + magicLinkAction emailRedirectTo no longer hardcodes ?next= but the route hasn't been verified end-to-end**
+
+- We removed the ?next= param in commit 2b20f18 so the callback's state-driven routing fires
+- But end-to-end test with a real magic link click that uses the new code never succeeded (Bug A above)
+- Need to confirm the callback's logic actually runs as intended in production once Bug A is diagnosed
+
+### Critical reading order for next session
+
+1. **This section (Section 13)** — current state, what works, what doesn't
+2. **Section 2** — Sunday deploy details + 5 bug fixes shipped (commit SHAs for reference)
+3. **Section 4** — Locked decisions, especially MAX_SKILLS=20 and Zod preprocess pattern
+4. **Section 12** — Agent drift patterns, especially Drift #6 (file-fragment loops) which surfaced again Sunday afternoon
+5. Skim Section 11 reflection notes for full deploy day arc
+
+### Critical files for next session
+
+- src/app/auth/callback/route.ts — recently rewritten in commit 2b20f18, needs verification
+- src/server/actions/auth.ts — loginAction + signUpAction + magicLinkAction, recently changed in 74ec1a7 + 2b20f18
+- src/server/actions/preferences.ts — recently restructured in 30ab98d (var savedSummary is dead code, can clean up)
+- src/server/lib/onboarding.ts — gate logic, source of truth for "where should this user be"
+- src/app/onboarding/preferences/\_components/preferences-client-form.tsx — chip input wiring, target roles suggestions
+- src/components/onboarding/chip-input.tsx — verify suggestion rendering logic
+
+### How to verify deploy is live before testing
+
+1. `git log --oneline -3` locally
+2. Open https://vercel.com/pasupulasuryas-projects/pasupulasurya-ai-job-os and confirm latest commit hash matches the deployed version's status="Ready"
+3. Only after both confirmed should fresh-signup tests run — otherwise testing old code
+
+### Real path forward when next session opens
+
+1. Confirm latest deploy is live (see step above)
+2. Reproduce Bug A with FRESH magic link (not cached email) on FRESH incognito
+3. If still broken: read /auth/callback/route.ts + getNextOnboardingStep + add logger.info statements + redeploy + reproduce + read Vercel logs
+4. Once Bug A fixed: walk full flow end-to-end with fresh email, document any new bugs hit
+5. Once flow works for 1 fresh user: invite ONE friend, watch them sign up, document any friction
+6. THEN consider broader beta
 
 Saturday (extended, 1 commit shipped + 1 doc commit): Diagnosed Zod validation_failed pattern from full 60-min cron logs. Initial drift: agent claimed "1 job in 60 min" without checking — user corrected with "you are mixing two cases here it was a bigger number." Real metrics: ~300 jobs/run sustained at ~5/min, validation failures ~2.7%, transport failures ~0.7%. Throttle working correctly. User pushed back on agent's "just remove the .max(20)" lazy proposal with Chesterton's Fence question. Second analysis pass surfaced the real cause: sanitize() ran AFTER validation, should run BEFORE. Real fix: z.preprocess on skills field. Tested against 8 real failure samples (5/8 recover). Decision NOT to raise MAX_SKILLS=20 was product-grounded — user's beta cohort is non-senior, matcher arithmetic uses overlap/total, raising cap would silently dilute scores for content-rich postings. Drift #2 (lazy-first-proposal) caught and corrected by user.
 
