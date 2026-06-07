@@ -31,7 +31,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
-      emailRedirectTo: `${SITE_URL}/auth/callback?next=/onboarding/preferences`,
+      emailRedirectTo: `${SITE_URL}/auth/callback`,
     },
   });
 
@@ -106,7 +106,7 @@ export async function magicLinkAction(formData: FormData): Promise<ActionResult>
   const { error } = await supabase.auth.signInWithOtp({
     email: parsed.data.email,
     options: {
-      emailRedirectTo: `${SITE_URL}/auth/callback?next=/onboarding/preferences`,
+      emailRedirectTo: `${SITE_URL}/auth/callback`,
       shouldCreateUser: true,
     },
   });
