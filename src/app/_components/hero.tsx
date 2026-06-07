@@ -1,0 +1,53 @@
+import Link from "next/link";
+
+export function Hero() {
+  return (
+    <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden px-6 py-24">
+      {/* Ambient depth — faint accent glow behind the composition */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute top-1/3 left-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full opacity-20 blur-[120px]"
+        style={{ background: "radial-gradient(circle, var(--accent) 0%, transparent 70%)" }}
+      />
+
+      <div className="relative z-10 flex w-full max-w-3xl flex-col items-center text-center">
+        <div className="text-text-tertiary mb-6 text-xs font-medium tracking-[0.2em] uppercase">
+          AI Job OS
+        </div>
+
+        <h1 className="text-text-primary text-4xl font-semibold tracking-tight sm:text-5xl">
+          Stop scrolling job boards.
+          <br />
+          <span className="text-accent">Start getting matched.</span>
+        </h1>
+
+        <p className="text-text-secondary mt-6 max-w-xl text-base leading-relaxed sm:text-lg">
+          We watch the companies that sponsor visas, read every posting with AI, and score each one
+          against you — so you apply to the right roles, not all of them.
+        </p>
+
+        <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
+          <Link
+            href="/signup"
+            className="bg-accent text-accent-foreground hover:bg-accent-hover rounded-md px-7 py-3 text-sm font-medium transition-colors"
+          >
+            Get started
+          </Link>
+          <Link
+            href="/login"
+            className="border-border-strong text-text-primary hover:bg-card rounded-md border px-7 py-3 text-sm font-medium transition-colors"
+          >
+            Sign in
+          </Link>
+        </div>
+
+        {/* Live product-loop demo mounts here in the next chunk */}
+        <div className="border-border bg-card/40 mt-16 flex h-72 w-full max-w-md items-center justify-center rounded-2xl border">
+          <span className="text-text-tertiary text-xs tracking-widest uppercase">
+            Demo mounts here
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
