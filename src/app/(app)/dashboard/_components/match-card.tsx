@@ -55,7 +55,6 @@ export function MatchCard(props: MatchCardProps) {
   };
 
   const handleApply = () => {
-    window.open(props.job.sourceUrl, "_blank", "noopener,noreferrer");
     setLocalStatus("applied");
     startTransition(async () => {
       const result = await markMatchAppliedAction(props.matchId);
@@ -150,12 +149,15 @@ export function MatchCard(props: MatchCardProps) {
           >
             <Eye className="h-4 w-4" strokeWidth={1.5} />
           </button>
-          <button
+          <a
+            href={props.job.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={handleApply}
             className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#0A84FF] px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0A84FF]/90 md:flex-none md:py-1.5"
           >
             Apply <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.5} />
-          </button>
+          </a>
         </div>
       </footer>
     </article>
