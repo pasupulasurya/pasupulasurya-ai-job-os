@@ -7,9 +7,11 @@ export default function Home() {
   return (
     <main className="bg-background min-h-screen">
       <AmbientBg />
-      <Hero />
-      <HowItWorks />
-      <WhatsNext />
+      <div className="border-border/60 relative mx-auto max-w-7xl border-x">
+        <Hero />
+        <HowItWorks />
+        <WhatsNext />
+      </div>
     </main>
   );
 }

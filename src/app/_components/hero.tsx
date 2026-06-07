@@ -16,7 +16,7 @@ export function Hero() {
           AI Job OS
         </div>
 
-        <h1 className="text-text-primary text-4xl font-semibold tracking-tight sm:text-5xl">
+        <h1 className="text-text-primary text-5xl font-bold tracking-[-0.03em] sm:text-7xl">
           Stop scrolling job boards.
           <br />
           <span className="text-accent">Start getting matched.</span>

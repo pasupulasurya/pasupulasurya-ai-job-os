@@ -49,7 +49,7 @@ export function HowItWorks() {
   return (
     <section className="relative w-full px-6 py-32">
       <div className="mx-auto max-w-6xl">
-        <h2 className="text-text-primary mb-16 text-center text-3xl font-semibold tracking-tight sm:text-4xl">
+        <h2 className="text-text-primary mb-20 text-center text-4xl font-bold tracking-[-0.03em] sm:text-6xl">
           How it works.{" "}
           <span className="text-text-tertiary">From job board to applied, automatically.</span>
         </h2>
