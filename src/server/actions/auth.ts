@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { signupSchema, loginSchema, magicLinkSchema } from "@/shared/schemas/auth";
+import { prisma } from "@/server/lib/prisma";
+import { getNextOnboardingStep } from "@/server/lib/onboarding";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
 
@@ -68,7 +70,26 @@ export async function loginAction(formData: FormData): Promise<ActionResult> {
   }
 
   logger.info({ userId: data.user.id, email: parsed.data.email }, "auth.login.completed");
-  redirect("/onboarding/preferences");
+
+  // Compute next onboarding step from real user state (or null = fully onboarded → dashboard)
+  const user = await prisma.user.findUnique({
+    where: { authId: data.user.id },
+    select: {
+      firstName: true,
+      lastName: true,
+      resumes: { where: { isMaster: true }, select: { id: true }, take: 1 },
+      preferences: { select: { keywords: true } },
+    },
+  });
+
+  const next = getNextOnboardingStep({
+    firstName: user?.firstName ?? null,
+    lastName: user?.lastName ?? null,
+    masterResumeExists: (user?.resumes.length ?? 0) > 0,
+    preferenceKeywordsCount: user?.preferences?.keywords.length ?? 0,
+  });
+
+  redirect(next ?? "/dashboard");
 }
 
 /**
