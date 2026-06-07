@@ -23,17 +23,6 @@ const ACTIVE_AT: Partial<Record<Step, number>> = {
   applied: HERO_INDEX,
 };
 
-// Cursor position (% of stage) per step.
-const CURSOR: Record<Step, { x: string; y: string }> = {
-  idle: { x: "8%", y: "10%" },
-  card0: { x: "42%", y: "30%" },
-  card1: { x: "42%", y: "52%" },
-  card2: { x: "42%", y: "74%" },
-  return: { x: "42%", y: "52%" },
-  click: { x: "82%", y: "52%" },
-  applied: { x: "82%", y: "52%" },
-};
-
 const SEQUENCE: { step: Step; delay: number }[] = [
   { step: "card0", delay: 700 },
   { step: "card1", delay: 1100 },
@@ -129,28 +118,6 @@ export function ProductDemo() {
             );
           })}
         </div>
-
-        {/* fake cursor */}
-        {!reduceMotion && (
-          <motion.svg
-            width="22"
-            height="22"
-            viewBox="0 0 24 24"
-            fill="none"
-            className="pointer-events-none absolute z-20 drop-shadow-lg"
-            initial={CURSOR.idle}
-            animate={CURSOR[step]}
-            transition={spring.gentle}
-          >
-            <path
-              d="M5 3l14 7-6 2-2 6-6-15z"
-              fill="var(--text-primary)"
-              stroke="var(--background)"
-              strokeWidth="1.5"
-              strokeLinejoin="round"
-            />
-          </motion.svg>
-        )}
       </div>
     </div>
   );
