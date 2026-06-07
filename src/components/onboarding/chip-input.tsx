@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { spring } from "@/styles/tokens";
+import { matchSuggestions } from "@/shared/data/role-suggestions";
 
 interface ChipInputProps {
   label: string;
@@ -31,13 +32,11 @@ export function ChipInput({
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const filteredSuggestions =
-    suggestions && draft.trim().length > 0
-      ? suggestions
-          .filter((s) => !values.includes(s))
-          .filter((s) => s.toLowerCase().includes(draft.trim().toLowerCase()))
-          .slice(0, MAX_VISIBLE_SUGGESTIONS)
-      : [];
+  const filteredSuggestions = suggestions
+    ? matchSuggestions(draft, suggestions)
+        .filter((s) => !values.includes(s))
+        .slice(0, MAX_VISIBLE_SUGGESTIONS)
+    : [];
 
   const showDropdown = open && filteredSuggestions.length > 0;
 

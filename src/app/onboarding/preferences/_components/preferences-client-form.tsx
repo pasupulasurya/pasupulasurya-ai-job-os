@@ -7,6 +7,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { OnboardingProgress } from "@/components/onboarding/progress";
 import { AuthBanner } from "@/components/auth/auth-banner";
 import { ChipInput } from "@/components/onboarding/chip-input";
+import { ROLE_SUGGESTIONS } from "@/shared/data/role-suggestions";
 import { ExperienceRange } from "@/components/onboarding/experience-range";
 import { JobTypeSelect } from "@/components/onboarding/job-type-select";
 import { PreferenceToggle } from "@/components/onboarding/preference-toggle";
@@ -127,6 +128,7 @@ export function PreferencesClientForm({
           hint="Add roles, skills, or tech you want jobs to match."
           values={keywords}
           onChange={setKeywords}
+          suggestions={ROLE_SUGGESTIONS}
         />
 
         <ChipInput
@@ -171,6 +173,7 @@ export function PreferencesClientForm({
           hint="Specific job titles you want to target."
           values={targetRoles}
           onChange={setTargetRoles}
+          suggestions={ROLE_SUGGESTIONS}
         />
 
         <ExperienceRange
