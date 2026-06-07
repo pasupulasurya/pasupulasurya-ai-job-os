@@ -104,10 +104,18 @@ export async function savePreferencesAction(
       );
     }
 
-    if (redirectTo) redirect(redirectTo);
-    return { success: true, matchSummary };
+    // Note: redirect() must be OUTSIDE the try/catch — it works by
+    // throwing a NEXT_REDIRECT signal that Next.js intercepts, and a
+    // catch block here would swallow it as a fake error.
+    if (!redirectTo) return { success: true, matchSummary };
+
+    // Stash result for caller (in practice unreached when redirectTo set;
+    // we redirect below). Kept for type clarity.
+    var savedSummary = matchSummary;
   } catch (err) {
     logger.error({ err }, "preferences.save.exception");
     return { error: "Something went wrong saving your preferences." };
   }
+
+  redirect(redirectTo);
 }
