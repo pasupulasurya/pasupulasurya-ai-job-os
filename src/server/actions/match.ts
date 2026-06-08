@@ -79,7 +79,7 @@ export async function markMatchAppliedAction(matchId: string): Promise<ActionRes
 
   const match = await prisma.userJobMatch.findFirst({
     where: { id: matchId, userId: appUser.id },
-    select: { id: true },
+    select: { id: true, jobId: true },
   });
   if (!match) return { error: "Match not found" };
 
@@ -87,7 +87,25 @@ export async function markMatchAppliedAction(matchId: string): Promise<ActionRes
     where: { id: matchId },
     data: { status: "applied" },
   });
-  logger.info({ userId: appUser.id, matchId }, "match.applied");
+
+  // Create an Application row so it surfaces in the tracker. Idempotent:
+  // skip if this user already has an application for this job.
+  const existing = await prisma.application.findFirst({
+    where: { userId: appUser.id, jobId: match.jobId },
+    select: { id: true },
+  });
+  if (!existing) {
+    await prisma.application.create({
+      data: {
+        userId: appUser.id,
+        jobId: match.jobId,
+        status: "applied",
+        appliedAt: new Date(),
+      },
+    });
+  }
+
+  logger.info({ userId: appUser.id, matchId, jobId: match.jobId }, "match.applied");
   return { success: true };
 }
 
