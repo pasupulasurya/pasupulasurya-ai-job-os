@@ -987,3 +987,51 @@ At the start of every session, after re-reading Sections 1-11, re-read this sect
 When the user pushes back with language like "remember the bar not the time," "is this the real fix per the bar," "you keep optimizing for X," or "this is a drop in bar standards" — you've drifted. Acknowledge it explicitly, name the drift number, re-propose against the bar, wait for the user to confirm before proceeding.
 
 The user has been more rigorous than the agent at holding the bar this session. The user trusts the agent to hold it without supervision. This section exists to make that trust earnable in future sessions.
+
+---
+
+## SESSION LOG — 2026-06-07 (Sunday evening) — Landing page + Phase 2I tracker
+
+> Appended at end of a long session. Read this for the most recent state; it supersedes older "next session" notes where they conflict.
+
+### Shipped to production this session (all LIVE on https://pasupulasurya-ai-job-os.vercel.app)
+
+- **AIML keyword suggestion fix.** Root cause was TWO bugs: (1) `ROLE_SUGGESTIONS` was never wired into the `ChipInput` `suggestions` prop in `preferences-client-form.tsx` — autocomplete was dead for ALL input; (2) `chip-input.tsx` used naive `includes()` substring match, so "AIML" matched nothing. Fix: wired the curated list in + added `matchSuggestions(query, pool)` + `SUGGESTION_ALIASES` map in `role-suggestions.ts` (aliases like aiml/ml/ai/genai → ML Engineer, AI Engineer, etc.). Alias-first, then substring fallback. Mirrors the SKILL_CANONICAL pattern.
+- **Cinematic landing page** (replaces the old placeholder `/`). Components in `src/app/_components/`: `hero.tsx` (benefit-led headline "Stop scrolling job boards. Start getting matched."), `product-demo.tsx` (animated dashboard vignette — cards walk through per-hue highlights, confetti on apply; cursor was removed as it wouldn't position correctly), `how-it-works.tsx` (4 Apple-style stage cards Scrape/Enrich/Match/Apply with per-hue glow), `whats-next.tsx` (roadmap "coming soon" cards), `final-cta.tsx` (single "Get started" finale), `ambient-bg.tsx` (page-wide drifting gradient orbs), `landing-nav.tsx` (built then removed per design). DESIGN DECISION: page has NO nav and only ONE "Get started" button, at the very bottom, so visitors scroll the full story first.
+- **Application tracker (Phase 2I) + Dismissed page.** See locked decisions below.
+- **Production user table cleaned** to just the one real account (usr_98b04a8e..., suryaprakashreddy9908@gmail.com). Six null/test users deleted from both public.User (script) and auth.users (dashboard by hand).
+
+### NEW LOCKED DECISIONS (do not re-discuss)
+
+- **Landing page palette rule (NEW — landing surface only):** The landing page (`/`) is allowed a RICHER palette than the product UI — gradients, multiple hues (semantic tokens + violet #bf5af2), confetti animation. This is DELIBERATE and does NOT loosen the product-UI bar: dashboard/settings/onboarding STAY locked to OLED black + single accent #0A84FF + no emojis. Two surfaces, two rules. Reason: restraint signals quality in the app; vibrancy pulls on marketing (Apple does the same split). Confetti is allowed on the landing demo; emojis still are not.
+- **Application status model:** Stored on the `Application` table's `status` String. Five states in order: `applied → under_consideration → interview → offer → rejected`. Constants live in `src/shared/data/application-status.ts` (APPLICATION_STATUSES, APPLICATION_STATUS_LABELS, isApplicationStatus). The apply flow now CREATES an Application row: `markMatchAppliedAction` in `match.ts` both flips UserJobMatch.status AND creates an idempotent Application row (skips if user already has one for that job). `updateApplicationStatusAction` in new `src/server/actions/application.ts` moves between states (powers "reconsider a mistaken rejection"). Page: `/applications`, list grouped by status with a per-row status dropdown.
+- **Dismissed page (`/dismissed`):** Its own route + sidebar nav item (Archive icon). Reads dismissed UserJobMatch rows (dismissed:true) showing match score + job + an Undismiss button. `undismissMatchAction` in `match.ts` reverses a dismiss (status:fresh, dismissed:false, clears dismissedAt/autoDismissed) — brings the job back to dashboard matches. Purpose: analysis surface for "scored high but dismissed — why?". Kept SEPARATE from the applications tracker (dismiss = not-interested pre-apply; rejected = applied-and-failed).
+
+### NEW KNOWN ISSUES
+
+- **Email signup blocked by rate limit (THE friend-blocker).** Supabase built-in email pool caps ~3-4 emails/hour. Real production signup-by-email is effectively untestable when the limit is hit, and won't scale past a tiny beta. NOT a code bug. The localhost-link bug IS fixed (emailRedirectTo now uses the correct Vercel NEXT_PUBLIC_SITE_URL — set in Vercel env). Resolving this needs the deferred Resend + domain decision ($15/yr), or staying on the pool for a handful of friends.
+- **Service-role key invalid.** `SUPABASE_SERVICE_ROLE_KEY` in `.env.local` is a well-formed but INVALID `sb_secret_` key — every admin API call returns 401 "Invalid API key" (verified via scripts/probe-admin.ts). App's normal flow works (uses anon key). Admin scripts (create user, etc.) are broken until a CURRENT secret key is pulled from Supabase dashboard → Settings → API Keys. NOTE: diagnosis showed the SDK (@supabase/supabase-js 2.106.1) is NOT the problem — sb*secret* keys are supported; the key value itself is stale/wrong. Do NOT upgrade the SDK to "fix" this.
+- **Dashboard greeting uses UTC date.** Shows "Monday June 8" on a Sunday evening in US Central because date is computed server-side in UTC. Cosmetic; fix by computing in the user's timezone.
+- **37 matches on stale matcher-v1 version.** Of the real account's 45 matches, 37 carry the old static `matcher-v1` (pre content-addressing), 8 carry hashed versions. They display fine but reflect older scoring. A fresh `matchJobsForUser` run would re-score all to the current version.
+
+### NEW DEV SCRIPTS ADDED (scripts/)
+
+- `check-email.ts <email>` — is an email FREE or EXISTS in User table
+- `list-users.ts` — all users (id, email, firstName)
+- `audit-users.ts` — per-user counts (prefs/resumes/matches/apps)
+- `delete-test-users.ts` — cascade-deletes a hardcoded list of test user ids (children first, then User), with a safety check excluding the real account
+- `match-status.ts` — status + matchVersion breakdown for the real account
+- `probe-admin.ts` — tests the admin API key (prints key prefix/length + admin.listUsers result)
+
+### NEXT-SESSION PLAN (priority order)
+
+1. **Email/domain decision — THE gate to inviting friends.** Either: buy a domain (~$15/yr), verify in Resend, switch Supabase Auth back to Custom SMTP; OR accept the built-in pool for a tiny (<10) friend beta. User deferred the domain purchase twice — do not re-pitch; present the two paths and let user choose.
+2. **Finish `resolveSiteUrl` hardening.** Currently in `git stash` (message "wip: resolveSiteUrl hardening"). It hardens `auth.ts` to fail loudly if the site URL is localhost in prod. BUG IN THE STASHED VERSION: it guards on `NODE_ENV === "production"`, which throws on local `npm run build` too. FIX: guard on `process.env.VERCEL_ENV === "production"` instead, so only real Vercel prod deploys throw. Pop stash, apply that change, build, ship.
+3. **Branch cleanup.** `chore/upgrade-supabase-sdk` branch is unused (we diagnosed instead of upgrading) — delete it. The git stash needs popping (item 2) or dropping. Landing + tracker are merged to main.
+4. **Optional polish:** re-score the 37 stale matches (run the matcher); fix the UTC date greeting; pull a fresh service-role key if admin scripts are needed.
+
+### SESSION META
+
+- All work done on branches with preview deploys, merged to main via squash PR (landing = PR #1, tracker = PR #2). This is the established workflow now: branch → push → preview → PR → squash-merge → prod. Production never touched directly.
+- Lesson reinforced: run `npm run build` (not just `tsc --noEmit`) before every push — tsc missed a missing-module that the Turbopack build caught.
+- Heredoc caution: multi-line JSX `<a>` tags got mangled by `cat << EOF` pastes twice. For JSX edits prefer Node patch scripts; keep anchor/link tags single-line.
