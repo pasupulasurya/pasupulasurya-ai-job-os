@@ -69,11 +69,10 @@ export async function dismissMatchAction(matchId: string): Promise<ActionResult>
 }
 
 /**
- * Record that the user applied to this job. Sets status='applied'.
- * The full Application row (resume version, notes, etc.) is a Phase 2H+ concern;
- * for now this is just a status flag.
+ * Undismiss a match — reverse of dismissMatchAction.
+ * Brings the job back into the dashboard matches. Ownership-checked.
  */
-export async function markMatchAppliedAction(matchId: string): Promise<ActionResult> {
+export async function undismissMatchAction(matchId: string): Promise<ActionResult> {
   const appUser = await getCurrentAppUser();
   if (!appUser) return { error: "Not authenticated" };
 
@@ -85,9 +84,50 @@ export async function markMatchAppliedAction(matchId: string): Promise<ActionRes
 
   await prisma.userJobMatch.update({
     where: { id: matchId },
+    data: { status: "fresh", dismissed: false, dismissedAt: null, autoDismissed: false },
+  });
+  logger.info({ userId: appUser.id, matchId }, "match.undismissed");
+  return { success: true };
+}
+
+/**
+ * Record that the user applied to this job. Sets status='applied'.
+ * The full Application row (resume version, notes, etc.) is a Phase 2H+ concern;
+ * for now this is just a status flag.
+ */
+export async function markMatchAppliedAction(matchId: string): Promise<ActionResult> {
+  const appUser = await getCurrentAppUser();
+  if (!appUser) return { error: "Not authenticated" };
+
+  const match = await prisma.userJobMatch.findFirst({
+    where: { id: matchId, userId: appUser.id },
+    select: { id: true, jobId: true },
+  });
+  if (!match) return { error: "Match not found" };
+
+  await prisma.userJobMatch.update({
+    where: { id: matchId },
     data: { status: "applied" },
   });
-  logger.info({ userId: appUser.id, matchId }, "match.applied");
+
+  // Create an Application row so it surfaces in the tracker. Idempotent:
+  // skip if this user already has an application for this job.
+  const existing = await prisma.application.findFirst({
+    where: { userId: appUser.id, jobId: match.jobId },
+    select: { id: true },
+  });
+  if (!existing) {
+    await prisma.application.create({
+      data: {
+        userId: appUser.id,
+        jobId: match.jobId,
+        status: "applied",
+        appliedAt: new Date(),
+      },
+    });
+  }
+
+  logger.info({ userId: appUser.id, matchId, jobId: match.jobId }, "match.applied");
   return { success: true };
 }
 
