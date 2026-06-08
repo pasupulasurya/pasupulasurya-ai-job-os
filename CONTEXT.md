@@ -1035,3 +1035,38 @@ The user has been more rigorous than the agent at holding the bar this session. 
 - All work done on branches with preview deploys, merged to main via squash PR (landing = PR #1, tracker = PR #2). This is the established workflow now: branch → push → preview → PR → squash-merge → prod. Production never touched directly.
 - Lesson reinforced: run `npm run build` (not just `tsc --noEmit`) before every push — tsc missed a missing-module that the Turbopack build caught.
 - Heredoc caution: multi-line JSX `<a>` tags got mangled by `cat << EOF` pastes twice. For JSX edits prefer Node patch scripts; keep anchor/link tags single-line.
+
+---
+
+## PHASE 2G DESIGN NOTES — Resume generation (worked out 2026-06-07, not yet built)
+
+> This is THE core value of the product — the reason matching/scoring exists. Captured from a design conversation; build is a future multi-session effort (~25-35h). Read this before starting 2G.
+
+### The core problem
+
+A world-class resume must satisfy two opposed readers at once: the ATS parser (wants exact keyword matches, simple parseable structure, standard headers — dumb and literal) and the human recruiter (wants story, impact, specificity — skims in ~6s). Most tools do one badly. 2G must thread both.
+
+### The structural advantage (the unlock)
+
+Unlike generic resume tools that start from "paste the job description," WE ALREADY HAVE THE MATCH DATA. The matcher's 6-dimension breakdown tells us exactly which skills matched, where the gaps are, what the job wants. So generation is not "rewrite for this job" — it's "given we scored X on skills / Y on experience, surface the true evidence that closes those specific gaps." The match breakdown IS the tailoring blueprint.
+
+### The 6-step flow (designed)
+
+1. User picks a match → sees a GAP ANALYSIS (matched skills vs missing skills, derived from the 6-dimension breakdown).
+2. User can CONFIRM-AND-ADD a truly-held skill that wasn't in their master resume — behind a "confirm this is true" guard.
+3. System GENERATES the tailored resume: reorder / reweight / rephrase the master resume to maximize HONEST overlap, woven with evidence. Never fabricates (locked non-fabrication decision).
+4. PREVIEW PAGE — user reads the full resume before doing anything.
+5. DOWNLOAD as an ATS-safe single-column PDF.
+6. (LATER, Phase 2H) the page auto-applies (Playwright auto-fill).
+
+### Two key design insights (the "why" behind the decisions)
+
+- **The confirm-guard IS a quality mechanism, not just ethics.** When the user adds a skill back, don't let it be a bare keyword — require a sentence of real evidence ("where did you use GraphQL?"). A bare keyword is weak (ATS sees it, human doesn't believe it); a skill demonstrated in a bullet is strong for BOTH readers. So the truthfulness guard and the resume quality are the same lever. Also: confirmed-added skills should flow BACK into the master resume so gap-closing compounds across jobs.
+- **"ATS-safe" means restraint, the same principle as the product UI.** A world-class ATS PDF is nearly the opposite of a designer's PDF. Hard rules: single column (multi-column scrambles parse order), real text not images, standard section headers ("Experience"/"Skills"/"Education"), simple fonts, no layout tables, left-aligned. It can still look clean (typography, whitespace, hierarchy) — it just can't be clever. Flawlessly parseable first, handsome second.
+
+### Build-time technical flags (for when 2G starts)
+
+- Gap analysis reads from the existing matcher 6-dimension breakdown — no new scoring needed, just surface what's already computed.
+- PDF generation server-side: clean single-column HTML→PDF template, or a text-positioning library. Will touch the existing signed-URL upload infra + Vercel 4.5MB body limit (see 2E/2F notes).
+- Confirm-and-add must write back to the master resume (UserPreference / ResumeVersion area) — design the write-back path so it's not a per-job re-entry.
+- Output format decision LOCKED: ATS-safe single-column PDF (not a pretty multi-column PDF).
