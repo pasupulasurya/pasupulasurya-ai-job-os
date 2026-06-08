@@ -29,25 +29,6 @@ export default async function ApplicationsPage() {
     },
   });
 
-  const dismissedMatches = await prisma.userJobMatch.findMany({
-    where: { userId: appUser.id, dismissed: true },
-    orderBy: { dismissedAt: "desc" },
-    select: {
-      id: true,
-      matchScore: true,
-      job: { select: { title: true, company: true, location: true, sourceUrl: true } },
-    },
-  });
-
-  const dismissed = dismissedMatches.map((m) => ({
-    id: m.id,
-    score: Math.round(m.matchScore),
-    title: m.job.title,
-    company: m.job.company,
-    location: m.job.location,
-    sourceUrl: m.job.sourceUrl,
-  }));
-
   const items = applications.map((a) => ({
     id: a.id,
     status: a.status,
@@ -58,5 +39,5 @@ export default async function ApplicationsPage() {
     sourceUrl: a.job.sourceUrl,
   }));
 
-  return <ApplicationsList items={items} dismissed={dismissed} />;
+  return <ApplicationsList items={items} />;
 }
