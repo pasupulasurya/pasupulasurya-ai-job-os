@@ -83,7 +83,7 @@ export default async function SettingsPage() {
 
   return (
     <main className="bg-background min-h-screen px-4 py-10 text-white md:px-8 md:py-16">
-      <div className="mx-auto max-w-4xl space-y-12 md:space-y-16">
+      <div className="mx-auto max-w-6xl space-y-12 md:space-y-16">
         {/* Account header — full width */}
         <header>
           <p className="text-text-tertiary mb-1 text-xs tracking-widest uppercase">Account</p>
