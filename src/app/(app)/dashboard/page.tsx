@@ -6,6 +6,7 @@ import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { EmptyState } from "./_components/empty-state";
 import { MatchList } from "./_components/match-list";
+import { GreetingDate } from "./_components/greeting-date";
 
 export const dynamic = "force-dynamic";
 
@@ -59,17 +60,12 @@ export default async function DashboardPage() {
   });
 
   const firstName = appUser.firstName;
-  const today = new Date().toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
 
   return (
     <main className="min-h-screen bg-black px-4 py-8 text-white md:px-6 md:py-12">
       <div className="mx-auto max-w-3xl">
         <header className="mb-6 md:mb-10">
-          <p className="mb-1 text-xs tracking-widest text-white/40 uppercase">{today}</p>
+          <GreetingDate />
           <h1 className="text-2xl font-medium tracking-tight md:text-3xl">
             Good to see you, {firstName}.
           </h1>
