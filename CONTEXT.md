@@ -1126,3 +1126,282 @@ Unlike generic resume tools that start from "paste the job description," WE ALRE
 - Workflow held: command-line edits (Node patch scripts with PATTERN-NOT-FOUND guards + `cat >`/`cat >>`), `tsc` (and `eslint` where the hook demands it) before every push, push to main, verify deploy Ready in Vercel before testing on production. User does NOT do manual file edits or PRs — everything goes through edit-command -> push.
 - Drift caught by user this session: agent ran a guess-and-check loop on the greeting-date component (shipped a lint-failing version twice) — user invoked the "no trial and error, read the files first" rule. Correct response was to read the repo's own client-component pattern (`score-ring.tsx`) and verify against `eslint` before proposing, not to keep retrying. Two `cat >` heredocs also silently failed to land mid-session — lesson: confirm a write actually landed (`sed -n`/`grep`) before verifying against it.
 - Heredoc caution (reaffirmed from prior log): multi-line content with backticks/template-literals in `node -e` is fragile; prefer guarded patch scripts and confirm the write landed.
+
+## SESSION LOG — 2026-06-09 (evening) — Settings redesign + Phase 2G design locked
+
+> Appended at end of session. Read this for the most recent state; supersedes
+> older "next session" notes where they conflict.
+
+### Shipped to feat/settings-redesign (preview verified, PR open)
+
+- **Settings page redesigned.** Was a single centered max-w-2xl column with
+  every section stacked at the same width — read as one long form. Now uses
+  max-w-6xl container with a label-left / content-right grid via new
+  `SettingsSection` primitive (md:col-span-3 for label, md:col-span-9 for
+  content card). Account header full-width at top, Sign out as a quiet row
+  at the bottom. Mobile stacks back to single-column. Closes known issue
+  "settings page looks odd / centered form."
+- **Resume management surface added.** Was a read-only card showing only the
+  master with a disabled "Upload UI coming soon" button. Now lists ALL the
+  user's ResumeVersion rows (orderBy createdAt desc), master clearly marked
+  with an accent badge, non-master rows have a "Make master" button. Upload
+  card sits above the list using the proven 3-step signed URL flow
+  (requestResumeUploadUrlAction → direct PUT to Supabase Storage →
+  uploadMasterResumeAction). Auto-resets idle ~1.5s after success and calls
+  router.refresh() so new master appears at top of list. Closes known issues
+  "settings resume card is read-only" and "master-resume-not-switchable
+  (schema supported, UI never exposed)."
+- **New Server Action `setMasterResumeAction(resumeId)`** appended to
+  src/server/actions/resume.ts. Mirrors uploadMasterResumeAction's
+  master-switch transaction (find current master → unset → set target) and
+  matcher-trigger pattern (force:true, inner try/catch, match summary
+  returned). Used by the Make-master button on the new resume list.
+  Non-destructive: previous master row stays with isMaster=false to preserve
+  provenance for tailored resumes (Phase 2G).
+- **PersonalInfoSection duplicate header stripped.** SettingsSection now
+  owns the "Personal info" label, so the inner h2 was removed; Edit button
+  floats top-right of the card.
+
+### NEW LOCKED DECISIONS (do not re-discuss)
+
+- **Settings container width: max-w-6xl** with md:col-span-3/9 grid inside
+  SettingsSection. Wider was tempting (looks more "spread") but breaks
+  reading lines on Preferences. This is the chosen compromise.
+- **Settings = upload + see all + pick master.** Generate/tailor stays on
+  the dashboard match flow because it needs job context. Generate has no
+  meaning without a match.
+- **Master-switch is non-destructive** (already true via existing
+  upload action, now re-confirmed for setMasterResumeAction). Tailored
+  resumes will reference masterResumeId in 2G and must keep pointing at
+  the master they were derived from even after a switch.
+- **No resume delete yet.** ResumeVersion is referenced by Application
+  (audit history) and will be referenced by TailoredResume (Phase 2G).
+  Proper delete requires soft-delete via a deletedAt column + filter
+  propagation everywhere ResumeVersion is queried, plus product-policy
+  on what happens when you delete a resume an Application points at.
+  Captured as future follow-up; visibility of all resumes in the list
+  covers most of what the user wanted.
+- **No upload cap.** Storage nets to zero per upload (file deleted after
+  processing); ResumeVersion rows in Postgres are effectively unbounded
+  for friend-scale beta. Arbitrary numeric limits without a reason fail
+  the bar.
+
+### KNOWN ISSUES STILL CARRIED FORWARD
+
+(unchanged from earlier in the file, restated so the next thread doesn't
+miss them in the noise)
+
+- Email/domain decision — built-in Supabase pool ~3-4 emails/hr caps the
+  beta at <10 friends. Two paths: buy domain (~$15/yr) + Resend Custom
+  SMTP, or stay on pool. User has deferred multiple times.
+- resolveSiteUrl hardening still in git stash (VERCEL_ENV vs NODE_ENV bug).
+- 37 stale matcher-v1 matches on the real account, cosmetic.
+- Test-user cleanup pending (do via Supabase dashboard / SQL editor).
+
+### PHASE 2G — LOCKED DESIGN (full plan, ready to build)
+
+> Worked out in detail in the design conversation 2026-06-09. This section
+> captures everything we settled so a fresh thread can resume building
+> without re-derivation.
+
+**Why 2G exists:** the heart of the product. Matcher/scoring/dashboard
+exists to feed _this_. Generic resume tools tailor cold ("paste the job
+description"); this product already has the matcher's 6-dimension
+breakdown for every (user, job) pair, so generation isn't "rewrite for
+this job" — it's "surface the true evidence that closes these specific
+gaps." The match breakdown IS the tailoring blueprint.
+
+**Bar specific to 2G:** the integrity guarantee is the product. A
+gorgeous resume that quietly adds a skill the user doesn't have isn't
+95%-perfect — it's a total failure. Verification catching fabrication is
+the hard problem; generation is the easy 80%. Stated bar: 100% catch on
+fabricated skills (architectural — structurally impossible), >95% catch
+on fabricated bullets (verification pass).
+
+**Build order:** 2G.0 Cerebras provider → 2G.1 table + engine + harness
+→ 2G.2 UI → 2G.3 PDF render → 2G.4 (optional) DOCX render.
+
+**Data model — `TailoredResume` table** (not overloading ResumeVersion):
+
+- Keyed on matchId (one tailored resume per match).
+- Stores tailored content + change ledger (per-change provenance) +
+  verification result + status (`generated` | `verified` | `saved`).
+- Master stays in ResumeVersion as locked truth. References master via
+  masterResumeId so non-destructive master-switching preserves provenance.
+
+**The change ledger is load-bearing.** Each AI-produced change carries:
+which skill it closes, the user's evidence sentence (truth source), the
+move (new vs augment), target role/bullet, before-text (null for new),
+after-text, parent trace (master bullet id for augment, evidence
+sentence for new). The ledger is what makes (a) verification work,
+(b) per-change revert work, (c) write-back-to-master work.
+
+**Generation engine — decomposed, not monolithic.** Three distinct LLM
+jobs, nothing else:
+
+1. **Summary rewrite** — master summary → tailored summary in job's
+   vocabulary, every claim tracing to master.
+2. **Bullet rephrase** — 1:1, one master bullet in, one tailored bullet
+   out, carrying parent link.
+3. **Gap-closing generation** — evidence sentence → AI classifies
+   new-bullet vs augment-existing (AI proposes, user accepts/reverts) →
+   generates the line.
+
+Everything else (which skills surface, which bullets keep, ordering,
+single-page constraint) is **code, not LLM** — driven by the matcher's
+6-dimension breakdown.
+
+**No free-text editing.** User supplies _truth_ (via evidence sentences),
+AI supplies _prose_. Two user actions only: structural curation
+(reorder/select/revert/drop) and gap-closing. Free typing would orphan
+changes from the ledger and break verification.
+
+**Write-back to master fires at confirm-time** (not Save). When user
+confirms a gap skill is true, it flows immediately into ResumeVersion's
+parsedJson skills. Independent of whether they keep this tailored
+version. UI must acknowledge the master change gently (never silently).
+
+**Verification architecture — by construction first, check second.**
+Only two ops can produce a bullet (rephrase or generate-from-evidence),
+each carrying its source link. An orphan bullet _cannot exist_ —
+fabricated bullets are structurally impossible. Fabricated skills are a
+set-membership check (every tailored skill must be in master.skills or
+confirmed-added). The residual job is a **per-bullet claim-drift check**:
+one tailored bullet vs its single parent, flagging any claim (number,
+scope, technology, outcome) not in the parent. Decision: **both layered**
+— code heuristics for cheap numeric/entity catches + LLM-as-verifier on
+the narrow parent-child pair for semantic drift. Defense in depth, same
+belt-and-suspenders pattern as Zod-preprocess + sanitize.
+
+**Generation timing: on-demand, not pre-generated.** User clicks "Tailor
+for this job" on a match → batched calls run → side-by-side appears in
+~few seconds → user curates/closes gaps → Save. Then `tailoredJson` is
+persisted, reopening that match is instant. Pre-generating for every
+match would burn through Cerebras's 1M TPD on resumes nobody opens.
+
+**Batching: per-role, not per-bullet.** One LLM call sends all of a
+role's bullets together and returns a structured array, each item tagged
+with parent master-bullet index. A 4-role resume is ~4 generation calls,
+not 40. Provenance survives batching because each returned item carries
+its parent link. Same pattern as the existing reason generator.
+
+**Model routing (2026-06-09 web-search-verified free tiers):**
+
+- **Cerebras for tailoring generation** — Llama 3.1 70B on the 1M
+  tokens/day free tier (most generous daily volume of any free
+  inference provider, no credit card). This is where the volume goes.
+- **Cerebras DeepSeek R1 Distill for the LLM verifier layer** —
+  reasoning model on the same free tier, purpose-fit for "does this
+  child bullet claim anything its parent doesn't." Candidate to A/B
+  on the harness against running verifier on the same 70B.
+- **Groq stays on enrichment + parsing + reasons** — its 100K TPD on
+  llama-3.3-70b-versatile undisturbed by tailoring volume.
+- Provider-agnostic LLMProvider interface absorbs both. Per-call
+  `model` override already supported in codebase. If any free tier
+  changes, swap is one new provider file.
+
+**UI — `/dashboard/tailor/[matchId]`:**
+
+- Entry point: "Tailor for this job" button on each dashboard match card.
+- Context header (top, full-width): job title + company + score ring
+  (reuse existing score-ring.tsx) + status line (generated → verified →
+  saved).
+- First load triggers generation, uses empty-state pattern (rotating
+  progress phrases under spring motion).
+- Two side-by-side panes: master (read-only, visually recessed, locked
+  truth) | tailored (working copy, changes highlighted with #0A84FF
+  left-edge accent).
+- Right pane is NOT a text editor — no cursor, no freeform typing. Every
+  line is a rendered AI-authored artifact the user curates.
+- Gap analysis panel: per missing skill, prompt "You used X? If yes,
+  where?" with a short evidence input. User submits → AI classifies new
+  vs augment → result appears highlighted in right pane → user accepts
+  or reverts.
+- Curation controls on right pane: reorder skills, select which bullets
+  appear per role, accept/revert per AI rewrite, drop a section. All
+  structural — drag handles, toggles, per-line revert. Never a text
+  field.
+- Bottom action bar: Save (writes tailoredJson + ledger + verification
+  result) + Download (renders ATS-safe single-column PDF from
+  tailoredJson on demand, never stored). Same render path serves
+  Playwright auto-fill in 2H.
+- Master pane visibly updates mid-session when confirm-and-add fires —
+  page must acknowledge the master change gently, never silently.
+- Mobile: side-by-side collapses to Master/Tailored tabs below `md`.
+
+**PDF format locked: ATS-safe single-column.** Single column (multi-
+column scrambles parser order), real text (not images), standard
+section headers ("Experience"/"Skills"/"Education"), simple fonts, no
+layout tables, left-aligned. Restraint over cleverness — flawlessly
+parseable first, handsome second. Different bar than the product UI but
+same principle (restraint signals quality).
+
+**Harness — separate from the main flow, mandatory before any live
+rollout.** Pattern follows existing scripts/test-enrich-prompt.ts and
+scripts/test-parse-prompt.ts. Pulls real (master, job) pairs from DB,
+runs generation, runs verification pass, no DB writes, prints result.
+Includes ADVERSARIAL fixtures — a job demanding a skill the user
+clearly lacks — and asserts verification CATCHES the fabrication.
+Measures call count and token usage per resume so we know a full
+tailoring run fits the free-tier budget before going live.
+
+**Forbidden transformations (verification must catch all):**
+
+- Add a skill not in master.parsedJson.skills (or confirmed-added set)
+- Add a bullet that doesn't trace to a master bullet or evidence sentence
+- Change any company / title / dates
+- Change education details
+- Claim experience master doesn't claim
+
+**Allowed transformations:**
+
+- Reorder skills / bullets
+- Rewrite summary using job terminology (every claim traces to master)
+- Rewrite bullet text in job's vocabulary (underlying fact must exist
+  in master)
+- Choose which 6–10 bullets to include per role (single-page constraint)
+- Truncate work history if too long
+
+**Two-masters question — DEFERRED.** User raised it ("I have two
+identities — data science and AI/ML — and I'm good at both"). Picked
+**one master, job drives everything** for now. The matcher's 6-dimension
+breakdown will naturally surface data-science truth for DS jobs and
+ML truth for ML jobs from the same master. If the master becomes
+genuinely too-blended to serve either well, revisit with two-master
+support (uses existing isMaster boolean + a "switch active master"
+control in settings, both of which now exist as of this branch).
+
+### WORKFLOW LOCKED FOR 2G (and going forward)
+
+- Branch → push → preview → PR → squash-merge → prod. Production never
+  touched directly.
+- Pre-push gate: `tsc --noEmit` + `npm run build` (Turbopack, mandatory,
+  not optional — tsc misses what build catches) + `eslint` (husky hook
+  enforces this on commit).
+- Pre-commit gate also enforced by husky: commitlint (body lines ≤100
+  chars, conventional format). Multi-line commit messages: write to
+  /tmp/commit-msg.txt and use `git commit -F`.
+- 2G.0 next: feat/2g0-cerebras-provider. Self-contained, no schema
+  changes, follows Groq reference pattern. Then 2G.1 introduces the
+  TailoredResume table + engine + harness on its own branch.
+
+### LESSONS FROM 2026-06-09 SETTINGS SESSION
+
+Three drift catches by the user during the branch work, all named so
+they don't repeat in 2G:
+
+1. **Heredoc + shell escaping is fragile for multi-line content with
+   `<`/`>`/`'`.** New files via `cat > "EOF"` (quoted tag) — fine.
+   Edits to existing files via Node patch scripts written to disk:
+   `cat > /tmp/patch.mjs << 'EOF' ... EOF && node /tmp/patch.mjs`.
+   Never inline `node -e` for multi-line anchors.
+2. **`&&` chains hide failing checks.** `grep -c "foo" file && tsc`
+   exits with grep's code when match count is 0, masking what's
+   actually broken. Use `;` for verification chains, with explicit
+   echo labels.
+3. **eslint + build are part of the chunk loop, not just the push gate.**
+   Run `npx eslint <touched files>` and `npm run build` at every
+   natural seam (each major component shipped, each file boundary
+   closed). Catching pre-commit-hook failures during the chunk where
+   the mistake was made is cheaper than catching them at push time
+   with stash-restore friction.
