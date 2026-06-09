@@ -205,15 +205,19 @@ export async function uploadMasterResumeAction(storagePath: string): Promise<Upl
       });
   }
 
-  let parsed;
+  // Parse is an ENHANCEMENT, not a gate. The empty-file block above already
+  // stopped truly unreadable uploads. If parsing fails here, we still let the
+  // user through with a minimal resume (raw text preserved), so onboarding is
+  // never hard-blocked by an LLM hiccup. Failures are logged for later repair.
+  let parsed: Awaited<ReturnType<typeof parseResume>> | null = null;
   try {
     parsed = await parseResume(rawText);
   } catch (err) {
     logger.error(
       { userId: appUser.id, err: (err as Error).message, name: (err as Error).name },
-      "resume.upload.parse_failed",
+      "resume.upload.parse_failed_degraded",
     );
-    return { error: "Couldn't parse the resume. Try again in a moment." };
+    parsed = null;
   }
 
   const result = await prisma.$transaction(async (tx) => {
@@ -232,9 +236,9 @@ export async function uploadMasterResumeAction(storagePath: string): Promise<Upl
         userId: appUser.id,
         isMaster: true,
         contentJson: { rawText },
-        parsedJson: parsed,
-        parsedAt: new Date(),
-        parseVersion: RESUME_PARSE_VERSION,
+        parsedJson: parsed ?? undefined,
+        parsedAt: parsed ? new Date() : null,
+        parseVersion: parsed ? RESUME_PARSE_VERSION : null,
         fileName,
         fileSize,
       },

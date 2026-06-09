@@ -16,44 +16,65 @@ const MAX_EDUCATION = 10;
 const MAX_SKILLS = 80;
 const MAX_BULLETS_PER_ROLE = 10;
 
+// Coerce a year that may arrive as a numeric string ("2021") into a number.
+// Non-numeric or missing -> null. Field stays typed as number downstream.
+const yearField = z.preprocess((v) => {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && /^\d{4}$/.test(v.trim())) return Number(v.trim());
+  return null;
+}, z.number().int().min(1950).max(2100).nullable().catch(null));
+
+// String field that degrades to null if the model returns the wrong shape.
+const softStr = (max: number) => z.string().max(max).nullable().catch(null);
+
 export const ResumeParseSchema = z.object({
-  fullName: z.string().max(120).nullable(),
-  email: z.string().max(120).nullable(),
-  phone: z.string().max(40).nullable(),
-  location: z.string().max(120).nullable(),
-  summary: z.string().max(800).nullable(),
-  totalYearsExperience: z.number().int().min(0).max(60).nullable(),
-  currentRole: z.string().max(120).nullable(),
-  currentCompany: z.string().max(120).nullable(),
+  fullName: softStr(120),
+  email: softStr(120),
+  phone: softStr(40),
+  location: softStr(120),
+  summary: softStr(800),
+  totalYearsExperience: z.preprocess((v) => {
+    if (v === null || v === undefined || v === "") return null;
+    if (typeof v === "number") return v;
+    if (typeof v === "string" && /^\d+$/.test(v.trim())) return Number(v.trim());
+    return null;
+  }, z.number().int().min(0).max(60).nullable().catch(null)),
+  currentRole: softStr(120),
+  currentCompany: softStr(120),
   education: z
     .array(
       z.object({
-        school: z.string().max(160),
-        degree: z.string().max(120).nullable(),
-        field: z.string().max(120).nullable(),
-        startYear: z.number().int().min(1950).max(2100).nullable(),
-        endYear: z.number().int().min(1950).max(2100).nullable(),
+        school: z.string().max(160).catch(""),
+        degree: softStr(120),
+        field: softStr(120),
+        startYear: yearField,
+        endYear: yearField,
       }),
     )
-    .max(MAX_EDUCATION),
+    .max(MAX_EDUCATION)
+    .catch([]),
   workHistory: z
     .array(
       z.object({
-        company: z.string().max(160).nullable(),
-        title: z.string().max(160).nullable(),
-        startDate: z.string().max(40).nullable(),
-        endDate: z.string().max(40).nullable(),
-        bullets: z.array(z.string().max(400)).max(MAX_BULLETS_PER_ROLE),
+        company: softStr(160),
+        title: softStr(160),
+        startDate: softStr(40),
+        endDate: softStr(40),
+        bullets: z.array(z.string().max(400)).max(MAX_BULLETS_PER_ROLE).catch([]),
       }),
     )
-    .max(MAX_WORK_HISTORY),
-  skills: z.array(z.string().max(60)).max(MAX_SKILLS),
-  links: z.object({
-    linkedin: z.string().max(200).nullable(),
-    github: z.string().max(200).nullable(),
-    portfolio: z.string().max(200).nullable(),
-    other: z.string().max(200).nullable(),
-  }),
+    .max(MAX_WORK_HISTORY)
+    .catch([]),
+  skills: z.array(z.string().max(60)).max(MAX_SKILLS).catch([]),
+  links: z
+    .object({
+      linkedin: softStr(200),
+      github: softStr(200),
+      portfolio: softStr(200),
+      other: softStr(200),
+    })
+    .catch({ linkedin: null, github: null, portfolio: null, other: null }),
 });
 export type ResumeParse = z.infer<typeof ResumeParseSchema>;
 
