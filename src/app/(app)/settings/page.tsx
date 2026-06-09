@@ -3,9 +3,11 @@ import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
 import { signOutAction } from "@/server/actions/auth";
-import { FileText, Briefcase, Eye } from "lucide-react";
+import { Briefcase, Eye } from "lucide-react";
 import { PersonalInfoSection } from "./_components/personal-info-section";
 import { PreferencesForm } from "./_components/preferences-form";
+import { SettingsSection } from "./_components/settings-section";
+import { ResumeSection, type ResumeRow } from "./_components/resume-section";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,7 @@ export default async function SettingsPage() {
     where: { authId: authUser.id },
     include: {
       preferences: true,
-      resumes: { where: { isMaster: true }, take: 1 },
+      resumes: { orderBy: { createdAt: "desc" } },
       jobMatches: { select: { status: true } },
     },
   });
@@ -38,7 +40,7 @@ export default async function SettingsPage() {
     redirect("/login");
   }
 
-  const masterResume = appUser.resumes[0] ?? null;
+  const masterResume = appUser.resumes.find((r) => r.isMaster) ?? null;
   type ParsedResume = {
     totalYearsExperience?: number | null;
     skills?: unknown;
@@ -47,8 +49,6 @@ export default async function SettingsPage() {
   } | null;
   const parsed = (masterResume?.parsedJson as ParsedResume) ?? null;
 
-  // Surface resume-extracted skills as suggested chips above the Keywords input.
-  // Defensive: parsedJson is Json? so we narrow at the boundary. Cap visible at 15.
   const suggestedSkills: string[] = Array.isArray(parsed?.skills)
     ? Array.from(
         new Set(
@@ -59,7 +59,6 @@ export default async function SettingsPage() {
       ).slice(0, 15)
     : [];
 
-  // Surface resume-extracted role titles as suggested chips above the target roles input.
   const roleCandidates: string[] = [];
   if (typeof parsed?.currentRole === "string" && parsed.currentRole.trim().length > 0) {
     roleCandidates.push(parsed.currentRole.trim());
@@ -79,81 +78,50 @@ export default async function SettingsPage() {
   const appliedCount = appUser.jobMatches.filter((m) => m.status === "applied").length;
   const viewedCount = appUser.jobMatches.filter((m) => m.status === "viewed").length;
 
-  const displayName = appUser.firstName;
+  const displayName = appUser.firstName ?? "There";
   const memberSince = formatDate(appUser.createdAt);
 
   return (
-    <main className="bg-background min-h-screen px-4 py-8 text-white md:px-6 md:py-12">
-      <div className="mx-auto max-w-2xl space-y-8 md:space-y-10">
-        {/* Profile header */}
-        <section className="flex items-start justify-between">
-          <div>
-            <p className="text-text-tertiary mb-1 text-xs tracking-widest uppercase">Account</p>
-            <h1 className="text-2xl font-medium tracking-tight md:text-3xl">{displayName}</h1>
-            <p className="text-text-secondary mt-1 text-sm">{authUser.email}</p>
-            <p className="text-text-tertiary mt-2 text-xs">Member since {memberSince}</p>
-          </div>
-          <form action={signOutAction}>
-            <button
-              type="submit"
-              className="text-text-tertiary hover:text-text-primary text-sm transition-colors"
-            >
-              Sign out
-            </button>
-          </form>
-        </section>
+    <main className="bg-background min-h-screen px-4 py-10 text-white md:px-8 md:py-16">
+      <div className="mx-auto max-w-4xl space-y-12 md:space-y-16">
+        {/* Account header — full width */}
+        <header>
+          <p className="text-text-tertiary mb-1 text-xs tracking-widest uppercase">Account</p>
+          <h1 className="text-2xl font-medium tracking-tight md:text-3xl">{displayName}</h1>
+          <p className="text-text-secondary mt-1 text-sm">{authUser.email}</p>
+          <p className="text-text-tertiary mt-2 text-xs">Member since {memberSince}</p>
+        </header>
 
-        {/* Personal info */}
-        <PersonalInfoSection
-          initialValues={{
-            firstName: appUser.firstName ?? "",
-            lastName: appUser.lastName ?? "",
-            phone: appUser.phone ?? "",
-            country: appUser.country,
-          }}
-        />
+        <SettingsSection title="Personal info" description="Your name, country, and phone number.">
+          <PersonalInfoSection
+            initialValues={{
+              firstName: appUser.firstName ?? "",
+              lastName: appUser.lastName ?? "",
+              phone: appUser.phone ?? "",
+              country: appUser.country,
+            }}
+          />
+        </SettingsSection>
 
-        {/* Resume card */}
-        <section>
-          <h2 className="text-text-secondary mb-3 text-xs font-medium tracking-widest uppercase">
-            Your resume
-          </h2>
-          <div className="bg-card border-border rounded-2xl border p-5">
-            {masterResume ? (
-              <div className="flex items-start gap-4">
-                <div className="bg-surface flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
-                  <FileText size={18} strokeWidth={1.5} className="text-text-secondary" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-text-primary truncate text-sm font-medium">
-                    {masterResume.fileName ?? "Master resume"}
-                  </p>
-                  <p className="text-text-tertiary mt-1 text-xs">
-                    Parsed {formatDate(masterResume.parsedAt)}
-                    {parsed?.totalYearsExperience != null &&
-                      ` · ${parsed.totalYearsExperience} years experience`}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled
-                  className="text-text-tertiary text-xs opacity-50"
-                  title="Upload UI coming soon"
-                >
-                  Upload new
-                </button>
-              </div>
-            ) : (
-              <p className="text-text-secondary text-sm">No master resume uploaded yet.</p>
+        <SettingsSection
+          title="Resume"
+          description="Upload, view, and choose which resume is your master."
+        >
+          <ResumeSection
+            resumes={appUser.resumes.map(
+              (r): ResumeRow => ({
+                id: r.id,
+                fileName: r.fileName,
+                isMaster: r.isMaster,
+                parsedAt: r.parsedAt,
+                fileSize: r.fileSize,
+                createdAt: r.createdAt,
+              }),
             )}
-          </div>
-        </section>
+          />
+        </SettingsSection>
 
-        {/* Activity stats */}
-        <section>
-          <h2 className="text-text-secondary mb-3 text-xs font-medium tracking-widest uppercase">
-            Activity
-          </h2>
+        <SettingsSection title="Activity" description="What you've done on AI Job OS so far.">
           <div className="bg-card border-border grid grid-cols-2 gap-px overflow-hidden rounded-2xl border">
             <div className="flex items-start gap-3 p-5">
               <div className="bg-surface flex h-10 w-10 shrink-0 items-center justify-center rounded-lg">
@@ -176,13 +144,12 @@ export default async function SettingsPage() {
               </div>
             </div>
           </div>
-        </section>
+        </SettingsSection>
 
-        {/* Preferences form */}
-        <section>
-          <h2 className="text-text-secondary mb-3 text-xs font-medium tracking-widest uppercase">
-            Preferences
-          </h2>
+        <SettingsSection
+          title="Preferences"
+          description="What you want, where you want it, who sponsors."
+        >
           <PreferencesForm
             suggestedKeywords={suggestedSkills}
             suggestedTargetRoles={suggestedTargetRoles}
@@ -222,7 +189,19 @@ export default async function SettingsPage() {
               avoidCompanies: appUser.preferences?.avoidCompanies ?? [],
             }}
           />
-        </section>
+        </SettingsSection>
+
+        {/* Sign out — quiet, at the bottom, after everything else */}
+        <div className="border-border flex justify-end border-t pt-8">
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              className="text-text-tertiary hover:text-text-primary text-sm transition-colors"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       </div>
     </main>
   );

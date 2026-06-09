@@ -298,3 +298,92 @@ async function extractText(fileBlob: Blob, contentType: string): Promise<string>
   }
   throw new Error(`Unsupported file type for extraction: ${contentType}`);
 }
+
+type SetMasterResult =
+  | { error: string }
+  | {
+      success: true;
+      newMasterId: string;
+      matchSummary?: { jobsConsidered: number; upserted: number; scoredAbove: number };
+    };
+
+/**
+ * Switch which existing ResumeVersion is the user's master. Non-destructive:
+ * the previous master row stays in DB with isMaster=false (preserves provenance
+ * for any tailored resumes derived from it).
+ *
+ * Triggers the matcher synchronously after the switch — the new master's
+ * resumeId + parseVersion are part of the matchVersion hash, so all existing
+ * matches become stale-version and get re-scored against the new resume's
+ * skills. Matcher failure does NOT fail the switch — the daily cron picks up.
+ */
+export async function setMasterResumeAction(resumeId: string): Promise<SetMasterResult> {
+  if (!resumeId || typeof resumeId !== "string") return { error: "Invalid resume id" };
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+  if (!authUser) return { error: "Not authenticated" };
+
+  const appUser = await prisma.user.findUnique({ where: { authId: authUser.id } });
+  if (!appUser) {
+    logger.error({ authId: authUser.id }, "resume.set_master.user_not_found");
+    return { error: "Couldn't find your account." };
+  }
+
+  const target = await prisma.resumeVersion.findUnique({
+    where: { id: resumeId },
+    select: { id: true, userId: true, isMaster: true },
+  });
+  if (!target || target.userId !== appUser.id) {
+    logger.warn({ userId: appUser.id, resumeId }, "resume.set_master.not_owned");
+    return { error: "Resume not found" };
+  }
+  if (target.isMaster) return { error: "Already your master resume" };
+
+  const result = await prisma.$transaction(async (tx) => {
+    const previousMaster = await tx.resumeVersion.findFirst({
+      where: { userId: appUser.id, isMaster: true },
+      select: { id: true },
+    });
+    if (previousMaster) {
+      await tx.resumeVersion.update({
+        where: { id: previousMaster.id },
+        data: { isMaster: false },
+      });
+    }
+    await tx.resumeVersion.update({
+      where: { id: target.id },
+      data: { isMaster: true },
+    });
+    return { previousMasterId: previousMaster?.id ?? null, newMasterId: target.id };
+  });
+
+  logger.info(
+    {
+      userId: appUser.id,
+      oldMasterId: result.previousMasterId,
+      newMasterId: result.newMasterId,
+    },
+    "resume.master.switched",
+  );
+
+  let matchSummary: { jobsConsidered: number; upserted: number; scoredAbove: number } | undefined;
+  try {
+    const summary = await matchJobsForUser({ userId: appUser.id, force: true });
+    matchSummary = {
+      jobsConsidered: summary.jobsConsidered,
+      upserted: summary.upserted,
+      scoredAbove: summary.scoredAbove,
+    };
+    logger.info({ userId: appUser.id, ...matchSummary }, "resume.set_master.matcher_completed");
+  } catch (err) {
+    logger.error(
+      { userId: appUser.id, err: (err as Error).message },
+      "resume.set_master.matcher_failed",
+    );
+  }
+
+  return { success: true, newMasterId: result.newMasterId, matchSummary };
+}

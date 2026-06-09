@@ -70,22 +70,17 @@ export function PersonalInfoSection({ initialValues }: Props) {
 
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-text-secondary text-xs font-medium tracking-widest uppercase">
-          Personal info
-        </h2>
+      <div className="bg-card border-border relative rounded-2xl border p-5">
         {mode === "view" && (
           <button
             type="button"
             onClick={startEdit}
-            className="text-text-tertiary hover:text-text-secondary inline-flex items-center gap-1 text-xs transition-colors"
+            className="text-text-tertiary hover:text-text-secondary absolute top-4 right-4 inline-flex items-center gap-1 text-xs transition-colors"
           >
             <Pencil size={12} strokeWidth={1.5} />
             Edit
           </button>
         )}
-      </div>
-      <div className="bg-card border-border rounded-2xl border p-5">
         <AnimatePresence mode="wait">
           {mode === "view" ? (
             <motion.dl
