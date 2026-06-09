@@ -208,7 +208,11 @@ export async function uploadMasterResumeAction(storagePath: string): Promise<Upl
   let parsed;
   try {
     parsed = await parseResume(rawText);
-  } catch {
+  } catch (err) {
+    logger.error(
+      { userId: appUser.id, err: (err as Error).message, name: (err as Error).name },
+      "resume.upload.parse_failed",
+    );
     return { error: "Couldn't parse the resume. Try again in a moment." };
   }
 
