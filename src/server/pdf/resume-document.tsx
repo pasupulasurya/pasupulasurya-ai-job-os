@@ -2,7 +2,12 @@
 // ATS-safe single-column resume PDF from tailoredJson + master fallbacks.
 // Deliberately boring: Helvetica, no tables, no graphics, no columns —
 // ATS parsers reward simplicity. Same content structure feeds 2H auto-fill.
-import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet, Font } from "@react-pdf/renderer";
+
+// Disable react-pdf's auto-hyphenation: it breaks words at wrap points
+// with inserted hyphens ("langgraph-"), corrupting skills/keywords for
+// ATS parsing. Whole words wrap intact instead.
+Font.registerHyphenationCallback((word) => [word]);
 import type { TailoredJson } from "@/server/services/ai/tailor";
 
 // Helvetica via react-pdf silently DROPS several typographic characters
