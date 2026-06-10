@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { ArrowLeft, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Download, Sparkles } from "lucide-react";
 import { ScoreRing } from "../../../_components/score-ring";
 import { ProgressState } from "./progress-state";
 import { ResumePane } from "./resume-pane";
@@ -95,7 +95,6 @@ export function TailorView(props: Props) {
       cancelled = true;
       pollingRef.current = false;
     };
-     
   }, [view, props.matchId]);
 
   const handleGenerate = () => {
@@ -265,14 +264,22 @@ export function TailorView(props: Props) {
           {/* Save bar */}
           <div className="sticky bottom-4 mt-8 flex items-center justify-between rounded-2xl border border-white/10 bg-black/80 px-5 py-3 backdrop-blur-md">
             <p className="text-xs text-white/40">{saved ? "Saved" : "Unsaved changes"}</p>
-            <button
-              onClick={handleSave}
-              disabled={saved}
-              className="inline-flex items-center gap-2 rounded-lg bg-[#0A84FF] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0A84FF]/90 disabled:opacity-40"
-            >
-              <Check className="h-4 w-4" strokeWidth={1.5} />
-              {saved ? "Saved" : "Save"}
-            </button>
+            <div className="flex items-center gap-2">
+              <a
+                href={`/api/tailored/${props.matchId}/pdf`}
+                className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-4 py-2 text-sm text-white/80 transition-colors hover:bg-white/5"
+              >
+                <Download className="h-4 w-4" strokeWidth={1.5} /> PDF
+              </a>
+              <button
+                onClick={handleSave}
+                disabled={saved}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#0A84FF] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[#0A84FF]/90 disabled:opacity-40"
+              >
+                <Check className="h-4 w-4" strokeWidth={1.5} />
+                {saved ? "Saved" : "Save"}
+              </button>
+            </div>
           </div>
         </>
       )}
