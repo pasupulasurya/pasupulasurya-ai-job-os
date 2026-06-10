@@ -72,12 +72,18 @@ export default async function TailorPage({ params }: { params: Promise<{ matchId
             })),
           }}
           initialTailored={
-            existing
+            existing && ["generated", "verified", "saved"].includes(existing.status)
               ? {
                   tailoredJson: existing.tailoredJson as TailoredJson,
                   changeLedger: existing.changeLedger as ChangeLedgerRecord[],
                   status: existing.status as "generated" | "verified" | "saved",
                 }
+              : null
+          }
+          initialGenerating={existing?.status === "generating"}
+          initialError={
+            existing?.status === "failed"
+              ? (existing.errorMessage ?? "Generation failed. Try again.")
               : null
           }
         />

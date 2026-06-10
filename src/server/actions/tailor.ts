@@ -3,8 +3,10 @@
 import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
+import { after } from "next/server";
 import {
-  tailorResumeForMatch,
+  startTailoring,
+  runGenerationIntoLock,
   generateBulletFromEvidence,
   interviewForEvidence,
   conversationToEvidence,
@@ -26,28 +28,74 @@ async function getAppUser() {
   return prisma.user.findUnique({ where: { authId: authUser.id } });
 }
 
-type TailorActionResult = { error: string } | { success: true; result: TailoringResult };
-
 /**
  * Generate (or resume) the tailored resume for a match. Long-running
  * (~60s fresh generation under Cerebras rate limits); the page shows a
  * progress state. Idempotent — re-invocation returns the existing draft.
  */
-export async function tailorForMatchAction(matchId: string): Promise<TailorActionResult> {
+export type StartTailorActionResult =
+  | { error: string }
+  | { success: true; kind: "ready" | "in_progress" | "started"; tailoredResumeId: string };
+
+/**
+ * Fire-and-poll: creates the generating lock row and schedules generation
+ * AFTER the response (next/server after()). Returns instantly. The client
+ * polls tailorStatusAction until status leaves "generating".
+ */
+export async function tailorForMatchAction(matchId: string): Promise<StartTailorActionResult> {
   if (!matchId || typeof matchId !== "string") return { error: "Invalid match id" };
   const appUser = await getAppUser();
   if (!appUser) return { error: "Not authenticated" };
 
   try {
-    const result = await tailorResumeForMatch({ userId: appUser.id, matchId });
-    return { success: true, result };
+    const start = await startTailoring({ userId: appUser.id, matchId });
+    if (start.kind === "failed") return { error: start.errorMessage };
+    if (start.kind === "started") {
+      after(() =>
+        runGenerationIntoLock({
+          userId: appUser.id,
+          matchId,
+          lockRowId: start.tailoredResumeId,
+        }),
+      );
+    }
+    return { success: true, kind: start.kind, tailoredResumeId: start.tailoredResumeId };
   } catch (err) {
     logger.error(
       { userId: appUser.id, matchId, err: (err as Error).message },
-      "tailor.action.generate_failed",
+      "tailor.action.start_failed",
     );
     return { error: (err as Error).message };
   }
+}
+
+export type TailorStatusActionResult =
+  | { error: string }
+  | {
+      success: true;
+      status: "generating" | "generated" | "verified" | "saved" | "failed";
+      errorMessage: string | null;
+      tailoredJson: TailoredJson | null;
+      changeLedger: ChangeLedgerRecord[] | null;
+    };
+
+/** Light polling read: row status + content once ready. */
+export async function tailorStatusAction(matchId: string): Promise<TailorStatusActionResult> {
+  if (!matchId) return { error: "Invalid match id" };
+  const appUser = await getAppUser();
+  if (!appUser) return { error: "Not authenticated" };
+
+  const row = await prisma.tailoredResume.findUnique({ where: { matchId } });
+  if (!row || row.userId !== appUser.id) return { error: "Not found" };
+
+  const ready = ["generated", "verified", "saved"].includes(row.status);
+  return {
+    success: true,
+    status: row.status as "generating" | "generated" | "verified" | "saved" | "failed",
+    errorMessage: row.errorMessage,
+    tailoredJson: ready ? (row.tailoredJson as TailoredJson) : null,
+    changeLedger: ready ? (row.changeLedger as ChangeLedgerRecord[]) : null,
+  };
 }
 
 type InterviewActionResult = { error: string } | { success: true; turn: InterviewTurn };

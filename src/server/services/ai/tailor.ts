@@ -135,6 +135,9 @@ export const GapClosingOutputSchema = z.object({
 export type TailoringInput = {
   userId: string;
   matchId: string;
+  // When set, generation fills this pre-created "generating" lock row
+  // (fire-and-poll flow) instead of creating a new row.
+  lockRowId?: string;
 };
 
 export type TailoringResult = {
@@ -439,21 +442,25 @@ async function loadTailoringInputs(args: { userId: string; matchId: string }) {
  *  - One bad role does NOT fail the whole tailoring.
  */
 export async function tailorResumeForMatch(input: TailoringInput): Promise<TailoringResult> {
-  // Idempotency check: existing row -> return it.
-  const existing = await prisma.tailoredResume.findUnique({
-    where: { matchId: input.matchId },
-  });
-  if (existing) {
-    logger.info({ matchId: input.matchId, status: existing.status }, "tailor.resumed_existing");
-    return {
-      tailoredResumeId: existing.id,
-      tailoredJson: existing.tailoredJson as TailoredJson,
-      changeLedger: existing.changeLedger as ChangeLedgerRecord[],
-      status: existing.status as "generated" | "verified" | "saved",
-      tokensUsed: existing.tokensUsed,
-      generationVersion: existing.generationVersion,
-      resumed: true,
-    };
+  // Idempotency: completed row -> return it. generating/failed rows are
+  // managed by startTailoring; if we're called with a lockRowId we proceed
+  // into generation regardless (the lock row is ours to fill).
+  if (!input.lockRowId) {
+    const existing = await prisma.tailoredResume.findUnique({
+      where: { matchId: input.matchId },
+    });
+    if (existing && ["generated", "verified", "saved"].includes(existing.status)) {
+      logger.info({ matchId: input.matchId, status: existing.status }, "tailor.resumed_existing");
+      return {
+        tailoredResumeId: existing.id,
+        tailoredJson: existing.tailoredJson as TailoredJson,
+        changeLedger: existing.changeLedger as ChangeLedgerRecord[],
+        status: existing.status as "generated" | "verified" | "saved",
+        tokensUsed: existing.tokensUsed,
+        generationVersion: existing.generationVersion,
+        resumed: true,
+      };
+    }
   }
 
   // Fresh generation.
@@ -728,19 +735,21 @@ Remove every violation. Do not introduce new ones.`,
   const validated = TailoredJsonSchema.parse(tailoredJson);
 
   // ---------- Step 4: write to DB ----------
-  const created = await prisma.tailoredResume.create({
-    data: {
-      matchId: input.matchId,
-      userId: input.userId,
-      masterResumeId: master.id,
-      jobId: match.jobId,
-      tailoredJson: validated,
-      changeLedger: ledger,
-      status: "generated",
-      generationVersion: TAILORING_VERSION,
-      tokensUsed: totalTokens || null,
-    },
-  });
+  const writeData = {
+    masterResumeId: master.id,
+    jobId: match.jobId,
+    tailoredJson: validated,
+    changeLedger: ledger,
+    status: "generated",
+    generationVersion: TAILORING_VERSION,
+    tokensUsed: totalTokens || null,
+    errorMessage: null,
+  };
+  const created = input.lockRowId
+    ? await prisma.tailoredResume.update({ where: { id: input.lockRowId }, data: writeData })
+    : await prisma.tailoredResume.create({
+        data: { matchId: input.matchId, userId: input.userId, ...writeData },
+      });
 
   logger.info(
     {
@@ -1021,4 +1030,100 @@ export function conversationToEvidence(conversation: ConversationMessage[]): str
     .filter((m) => m.role === "user")
     .map((m) => m.text)
     .join(" ");
+}
+
+// ============================================================
+// FIRE-AND-POLL (2G.3)
+// ============================================================
+// startTailoring: fast lock-row creation; actual generation runs after
+// the response via next/server after() in the action layer.
+
+const STALE_LOCK_MS = 10 * 60 * 1000; // generating >10 min = crashed run
+
+export type StartTailoringResult =
+  | { kind: "ready"; tailoredResumeId: string }
+  | { kind: "in_progress"; tailoredResumeId: string }
+  | { kind: "started"; tailoredResumeId: string }
+  | { kind: "failed"; tailoredResumeId: string; errorMessage: string };
+
+export async function startTailoring(input: {
+  userId: string;
+  matchId: string;
+}): Promise<StartTailoringResult> {
+  const existing = await prisma.tailoredResume.findUnique({
+    where: { matchId: input.matchId },
+  });
+
+  if (existing) {
+    if (["generated", "verified", "saved"].includes(existing.status)) {
+      return { kind: "ready", tailoredResumeId: existing.id };
+    }
+    if (existing.status === "generating") {
+      const ageMs = Date.now() - existing.updatedAt.getTime();
+      if (ageMs < STALE_LOCK_MS) {
+        return { kind: "in_progress", tailoredResumeId: existing.id };
+      }
+      // Stale lock: crashed run. Reset to generating and retake.
+      await prisma.tailoredResume.update({
+        where: { id: existing.id },
+        data: { status: "generating", errorMessage: null },
+      });
+      logger.warn({ matchId: input.matchId }, "tailor.stale_lock_retaken");
+      return { kind: "started", tailoredResumeId: existing.id };
+    }
+    if (existing.status === "failed") {
+      // Retake: reset the row to generating for a fresh run.
+      await prisma.tailoredResume.update({
+        where: { id: existing.id },
+        data: { status: "generating", errorMessage: null },
+      });
+      return { kind: "started", tailoredResumeId: existing.id };
+    }
+  }
+
+  // Validate inputs exist BEFORE creating the lock (fast checks).
+  const { match, master } = await loadTailoringInputs(input);
+  const created = await prisma.tailoredResume.create({
+    data: {
+      matchId: input.matchId,
+      userId: input.userId,
+      masterResumeId: master.id,
+      jobId: match.jobId,
+      tailoredJson: {},
+      changeLedger: [],
+      status: "generating",
+      generationVersion: TAILORING_VERSION,
+    },
+  });
+  logger.info({ matchId: input.matchId, tailoredResumeId: created.id }, "tailor.lock_created");
+  return { kind: "started", tailoredResumeId: created.id };
+}
+
+/**
+ * The background half: runs the full generation pipeline into the lock row.
+ * On any error, marks the row failed with a user-facing message.
+ * Called via after() from the action layer — never blocks the response.
+ */
+export async function runGenerationIntoLock(input: {
+  userId: string;
+  matchId: string;
+  lockRowId: string;
+}): Promise<void> {
+  try {
+    await tailorResumeForMatch({
+      userId: input.userId,
+      matchId: input.matchId,
+      lockRowId: input.lockRowId,
+    });
+  } catch (err) {
+    const message = (err as Error).message || "Generation failed";
+    logger.error(
+      { matchId: input.matchId, lockRowId: input.lockRowId, err: message },
+      "tailor.generation_failed",
+    );
+    await prisma.tailoredResume.update({
+      where: { id: input.lockRowId },
+      data: { status: "failed", errorMessage: message },
+    });
+  }
 }
