@@ -1517,3 +1517,32 @@ verification unchanged (thread = truth source). Ledger entry gains a
 `conversation` field (full Q&A turns) so the user can always see what
 was asked and answered. Changes on the tailored pane are clickable ->
 before/after + skill served + evidence thread + verification status.
+
+### SESSION ADDENDUM — 2026-06-09 (late) — 2G.2 SHIPPED TO PRODUCTION
+
+Tailor page UI merged: /dashboard/tailor/[matchId] with side-by-side
+panes, clickable change provenance (before/after + evidence thread +
+verified badge), conversational gap-closing (interviewer max 3 open
+questions code-enforced, never leads the witness), refusal path renders
+honestly, save bar. Tailor (outline) + Apply (filled) separate buttons
+on match cards. Engine additions: interviewForEvidence,
+conversationToEvidence, ledger conversation field.
+
+Preview smoke passed on real data: fresh generation (Robinhood match,
+~3 min cold), garbage answers refused, real evidence (Stripe/payments)
+interviewed -> verified bullet -> saved.
+
+CEREBRAS_API_KEY added to Vercel (Production + Preview). Env debugging
+note: deployments before the var was correctly attached kept failing —
+resolved via .env-paste re-add + cache-free redeploy. Production
+confirmed untouched throughout (no Tailor button until merge).
+
+NEW FOLLOW-UPS:
+
+- Post-save dead-end: page has no next action after Save. 2G.3 PDF
+  download is the natural fix; consider "coming soon" hint sooner.
+- Fresh generation ~3 min on preview (vs 63s local) — cold start +
+  rate cap. Progress UI covers it; measure in production.
+- Match-card footer now 4 actions wide — watch mobile crowding.
+
+NEXT SESSION: 2G.3 — ATS-safe PDF render from tailoredJson.
