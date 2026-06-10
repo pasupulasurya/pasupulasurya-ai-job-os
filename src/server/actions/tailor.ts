@@ -34,6 +34,17 @@ type TailorActionResult = { error: string } | { success: true; result: Tailoring
  * progress state. Idempotent — re-invocation returns the existing draft.
  */
 export async function tailorForMatchAction(matchId: string): Promise<TailorActionResult> {
+  // TEMP DIAGNOSTIC — remove before merge
+  logger.info(
+    {
+      cerebrasKeySet: typeof process.env.CEREBRAS_API_KEY === "string",
+      cerebrasKeyLength: process.env.CEREBRAS_API_KEY?.length ?? 0,
+      envKeysWithCerebras: Object.keys(process.env).filter((k) =>
+        k.toUpperCase().includes("CEREBRAS"),
+      ),
+    },
+    "tailor.env_diagnostic",
+  );
   if (!matchId || typeof matchId !== "string") return { error: "Invalid match id" };
   const appUser = await getAppUser();
   if (!appUser) return { error: "Not authenticated" };
