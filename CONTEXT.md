@@ -1603,3 +1603,38 @@ designed fallback if production shows deaths.
 
 NEXT: 2G.3 part 2 — ATS-safe PDF download from tailoredJson (the
 post-save dead-end fix).
+
+### SESSION LOG — 2026-06-10 — 2G.3 PART 2: PDF DOWNLOAD SHIPPED (verified: 4ea1e42 #9 on main)
+
+GET /api/tailored/[matchId]/pdf via @react-pdf/renderer (pure JS, no
+chromium, free-tier safe). ATS rules: single column, Helvetica, real
+selectable text, name/contact -> summary -> skills -> experience ->
+education. Personal info: User row first, master parsedJson per-field
+fallback (real shape verified: fullName/email/phone/location; education
+school/degree/field/startYear/endYear). Education verbatim from master.
+Download button (plain anchor) in save bar. Auth+ownership in route;
+409 until generation finished. route.tsx (JSX in route handler) builds
+fine on Next 16.
+
+REAL-BYTES DEBUGGING (read-the-source-of-truth rule paid off twice):
+
+1. U+2011 non-breaking hyphens in resume text silently DROPPED by
+   react-pdf Helvetica shaper ("context-aware" -> "contextaware",
+   breaking ATS keywords). Fix: pdfSafe char normalization (typographic
+   hyphens/dashes/quotes/ellipsis/nbsp -> ASCII) applied at a single
+   render-time choke point; stored content untouched.
+2. react-pdf auto-hyphenation broke words at wrap points ("langgraph-")
+   — disabled via Font.registerHyphenationCallback whole-word wrap.
+3. "KL University –2022" investigated: startYear genuinely null in that
+   master's parse — render correct, not a bug.
+
+Full-loop evidence on Surya's real resume: gap closed with live
+evidence between two downloads -> verified bullet appeared in next PDF.
+
+npm audit: 6 moderate vulns are PRE-EXISTING (prisma dev tooling hono
+server; next bundled postcss — "fix" wants next@9, absurd). Known
+noise, no action.
+
+2G.3 COMPLETE. NEXT: 2G.4 optional DOCX render, or onward to 2H
+(Playwright auto-fill) / earlier carry-forwards (email/domain decision,
+resolveSiteUrl stash, stale matcher-v1 matches).
