@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, X, ExternalLink, CheckCircle2, ChevronDown } from "lucide-react";
+import { Eye, X, ExternalLink, CheckCircle2, ChevronDown, Wand2 } from "lucide-react";
 import { ScoreRing } from "./score-ring";
 import { ScoreBreakdown } from "./score-breakdown";
 import { spring } from "@/styles/tokens";
@@ -149,6 +150,12 @@ export function MatchCard(props: MatchCardProps) {
           >
             <Eye className="h-4 w-4" strokeWidth={1.5} />
           </button>
+          <Link
+            href={`/dashboard/tailor/${props.matchId}`}
+            className="inline-flex flex-1 items-center justify-center gap-2 rounded-lg border border-[#0A84FF]/40 px-3 py-2 text-sm font-medium text-[#0A84FF] transition-colors hover:bg-[#0A84FF]/10 md:flex-none md:py-1.5"
+          >
+            <Wand2 className="h-3.5 w-3.5" strokeWidth={1.5} /> Tailor
+          </Link>
           <a
             href={props.job.sourceUrl}
             target="_blank"
