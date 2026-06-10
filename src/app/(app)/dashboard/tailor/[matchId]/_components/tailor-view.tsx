@@ -1,12 +1,16 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { ArrowLeft, Check, Sparkles } from "lucide-react";
 import { ScoreRing } from "../../../_components/score-ring";
 import { ProgressState } from "./progress-state";
 import { ResumePane } from "./resume-pane";
 import { GapPanel } from "./gap-panel";
-import { tailorForMatchAction, saveTailoredResumeAction } from "@/server/actions/tailor";
+import {
+  tailorForMatchAction,
+  tailorStatusAction,
+  saveTailoredResumeAction,
+} from "@/server/actions/tailor";
 import type { TailoredJson, ChangeLedgerRecord } from "@/server/services/ai/tailor";
 
 export type MasterParsedView = {
@@ -35,34 +39,86 @@ type Props = {
   gapSkills: string[];
   masterParsed: MasterParsedView;
   initialTailored: TailoredState | null;
+  initialGenerating: boolean;
+  initialError: string | null;
 };
 
 type ViewState = "cta" | "generating" | "ready";
 
 export function TailorView(props: Props) {
   const [tailored, setTailored] = useState<TailoredState | null>(props.initialTailored);
-  const [view, setView] = useState<ViewState>(props.initialTailored ? "ready" : "cta");
-  const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<ViewState>(
+    props.initialTailored ? "ready" : props.initialGenerating ? "generating" : "cta",
+  );
+  const [error, setError] = useState<string | null>(props.initialError);
   const [saved, setSaved] = useState(props.initialTailored?.status === "saved");
   const [mobileTab, setMobileTab] = useState<"master" | "tailored">("tailored");
   const [, startTransition] = useTransition();
 
+  // Poll while generating: every 5s until the row leaves "generating".
+  // Runs on mount too (initialGenerating), so refresh/navigation resumes.
+  const pollingRef = useRef(false);
+  useEffect(() => {
+    if (view !== "generating" || pollingRef.current) return;
+    pollingRef.current = true;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      const res = await tailorStatusAction(props.matchId);
+      if (cancelled) return;
+      if ("error" in res) {
+        setError(res.error);
+        setView("cta");
+        pollingRef.current = false;
+        return;
+      }
+      if (res.status === "failed") {
+        setError(res.errorMessage ?? "Generation failed. Try again.");
+        setView("cta");
+        pollingRef.current = false;
+        return;
+      }
+      if (res.tailoredJson && res.changeLedger) {
+        setTailored({
+          tailoredJson: res.tailoredJson,
+          changeLedger: res.changeLedger,
+          status: res.status as "generated" | "verified" | "saved",
+        });
+        setView("ready");
+        pollingRef.current = false;
+        return;
+      }
+      setTimeout(tick, 5000);
+    };
+    setTimeout(tick, 5000);
+    return () => {
+      cancelled = true;
+      pollingRef.current = false;
+    };
+     
+  }, [view, props.matchId]);
+
   const handleGenerate = () => {
-    setView("generating");
     setError(null);
     startTransition(async () => {
       const res = await tailorForMatchAction(props.matchId);
       if ("error" in res) {
         setError(res.error);
-        setView("cta");
         return;
       }
-      setTailored({
-        tailoredJson: res.result.tailoredJson,
-        changeLedger: res.result.changeLedger,
-        status: res.result.status,
-      });
-      setView("ready");
+      if (res.kind === "ready") {
+        const st = await tailorStatusAction(props.matchId);
+        if (!("error" in st) && st.tailoredJson && st.changeLedger) {
+          setTailored({
+            tailoredJson: st.tailoredJson,
+            changeLedger: st.changeLedger,
+            status: st.status as "generated" | "verified" | "saved",
+          });
+          setView("ready");
+          return;
+        }
+      }
+      setView("generating");
     });
   };
 

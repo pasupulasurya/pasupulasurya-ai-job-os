@@ -280,7 +280,8 @@ model TailoredResume {
   changeLedger      Json         @default("[]") // array of per-change provenance records
   verificationResult Json?       // output of verification pass; null until verified
 
-  status            String       @default("generated") // "generated" | "verified" | "saved"
+  status            String       @default("generated") // "generating" | "generated" | "verified" | "saved" | "failed"
+  errorMessage      String?      // populated when status="failed"; user-facing
   generationVersion String       // e.g. "cerebras-gpt-oss-120b-tailor-v1"
   tokensUsed        Int?         // total LLM tokens consumed across all calls for this tailoring
 
