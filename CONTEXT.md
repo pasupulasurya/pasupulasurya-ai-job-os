@@ -1565,3 +1565,11 @@ while in-flight could race a duplicate run (idempotency only guards
 COMPLETED rows). Fix: status "generating" row written immediately as an
 in-flight lock; action returns fast; page polls; works across
 navigation. Needs Vercel background-execution care (waitUntil/queue).
+
+### CORRECTION + LESSON — Addendum 2 said "merged" before verifying
+
+The back-nav fix was recorded as merged while the PR was still unmerged;
+caught by checking git log (docs commit sat directly on 2G.2 with no fix
+commit). Fix is NOW truly on main (d7715f3, PR #7). NEW RULE: never
+write "merged" in CONTEXT until `git log --oneline -3` shows the merge
+commit on main. Verification before documentation.
