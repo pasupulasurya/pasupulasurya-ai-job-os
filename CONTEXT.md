@@ -1573,3 +1573,33 @@ caught by checking git log (docs commit sat directly on 2G.2 with no fix
 commit). Fix is NOW truly on main (d7715f3, PR #7). NEW RULE: never
 write "merged" in CONTEXT until `git log --oneline -3` shows the merge
 commit on main. Verification before documentation.
+
+### SESSION LOG — 2026-06-10 — 2G.3 FIRE-AND-POLL SHIPPED (verified: 09a2f24 #8 on main)
+
+Tailor click now creates a status="generating" lock row, schedules
+generation via next/server after() (Next 16.2.6), returns instantly.
+Page polls tailorStatusAction every 5s; progress survives navigation
+and refresh (server passes initialGenerating/initialError). Failures
+mark status="failed" + user-facing errorMessage; stale locks (>10 min)
+retaken as crashed.
+
+Schema: TailoredResume gains errorMessage String?; status values now
+generating|generated|verified|saved|failed. Engine: startTailoring
+(fast lock) + runGenerationIntoLock (background half);
+tailorResumeForMatch gains optional lockRowId (update-into-lock vs
+create).
+
+EVIDENCE PROTOCOL (locked process for platform-assumption features):
+branch marked experiment, NOT merged until preview evidence passed.
+Mid-build drift caught by Surya: original plan filed the 5m
+maxDuration risk as a footnote instead of treating it as a design
+gate. Re-audited against bar; demoted to experiment; evidence then
+passed all 4 tests — instant flip, survive-navigation, duplicate
+guard, and after() completing a full 124s generation with no error.
+
+KNOWN LIMIT: 5m function window; pathologically slow runs could die at
+the edge -> stale-lock recovery. Chunked poll-driven generation is the
+designed fallback if production shows deaths.
+
+NEXT: 2G.3 part 2 — ATS-safe PDF download from tailoredJson (the
+post-save dead-end fix).
