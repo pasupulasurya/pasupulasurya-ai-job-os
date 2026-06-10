@@ -1546,3 +1546,22 @@ NEW FOLLOW-UPS:
 - Match-card footer now 4 actions wide — watch mobile crowding.
 
 NEXT SESSION: 2G.3 — ATS-safe PDF render from tailoredJson.
+
+### ADDENDUM 2 — 2026-06-09 — back-nav fix + fire-and-poll filed
+
+fix/tailor-back-nav merged: Back link is a plain anchor; next/link
+client navigation queued behind pending useTransition gap actions
+(30-60s), leaving users stuck. Repro verified fixed on preview.
+
+Terminal lesson: this clipboard/terminal pipeline EATS literal "<a"
+tokens in pasted heredocs/scripts — three patch attempts corrupted the
+same file before diagnosis. Workaround: build the token via
+concatenation ("<"+"a") in patch scripts. Never paste a bare <a.
+
+TOP PRIORITY FILED FOR 2G.3 — fire-and-poll generation:
+Generation takes 4-5 min in prod (63s local). Current design holds the
+user on-page; leaving mid-flight loses the progress view, and a re-click
+while in-flight could race a duplicate run (idempotency only guards
+COMPLETED rows). Fix: status "generating" row written immediately as an
+in-flight lock; action returns fast; page polls; works across
+navigation. Needs Vercel background-execution care (waitUntil/queue).
