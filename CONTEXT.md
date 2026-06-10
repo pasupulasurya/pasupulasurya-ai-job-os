@@ -1638,3 +1638,51 @@ noise, no action.
 2G.3 COMPLETE. NEXT: 2G.4 optional DOCX render, or onward to 2H
 (Playwright auto-fill) / earlier carry-forwards (email/domain decision,
 resolveSiteUrl stash, stale matcher-v1 matches).
+
+### PHASE 2H DESIGN — LOCKED 2026-06-10 (full design session, supersedes the one-line bullet)
+
+GOAL: click Apply on dashboard -> job form fills in the user's own
+browser, visibly, step by step -> human reviews -> human submits.
+
+LOCKED DECISIONS:
+
+- Fill-and-review ONLY. The system NEVER auto-submits. Human is the
+  final gate (non-fabrication bar applied to actions).
+- Runs in the user's real browser. Hosted/server-side filling is a
+  hard no (would require storing user portal credentials).
+- Friends constraint: install ONCE is acceptable; terminal per-use is
+  not. Architecture: Chrome extension (content script fills, dashboard
+  Apply button signals it). Playwright is the DEV LAB only — same
+  engine, faster iteration; nothing built in it is throwaway.
+- Resume-upload-first strategy: when a portal offers "upload resume to
+  autofill", upload the tailored PDF, let the portal parse, then fill
+  ONLY the leftovers.
+- Multi-page forms (4-10 pages): page-step machine with per-page human
+  checkpoint. Unknown fields are NEVER guessed — highlighted and
+  deferred to the human.
+- Account walls: user logs in themselves, once per portal, in their
+  own browser; sessions persist. Credentials never touch our system.
+- Custom free-text questions: LLM answers in 2H.3 with the same
+  verification bar — answers trace to profile/resume only.
+
+SEQUENCE:
+
+- 2H.0 fill engine as Surya-only Playwright script (field detection,
+  resume-upload-first, leftovers fill, page-step machine, pause UX)
+- 2H.1 port engine into Chrome extension shell (install via link)
+- 2H.2 ATS adapters: Greenhouse first (largest share of job pool),
+  then Lever, Ashby
+- 2H.3 LLM custom-question answers with verification
+
+CAPACITY MATH (verified Cerebras headers): tailoring costs ~10-15 req
+
+- ~25K tokens per application. Tokens bind first: ~40 applications/day
+  ≈ 8-10 daily-active friends at 5 jobs each. 5 req/min = one generation
+  at a time globally; concurrent users queue. PRE-INVITE GUARD REQUIRED:
+  per-user daily tailor limit (pairs with existing dailyApplyLimit).
+  Overflow levers when outgrown: Groq routing, per-job caching,
+  multi-provider round-robin.
+
+NEXT SESSION: open fresh thread from the four-file bundle. Start
+2H.0 — or first the pre-invite carry-forwards (email/domain decision,
+tailor rate guard, resolveSiteUrl stash).
