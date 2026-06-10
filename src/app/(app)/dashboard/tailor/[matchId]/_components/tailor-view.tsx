@@ -2,7 +2,6 @@
 
 import { useState, useTransition } from "react";
 import { ArrowLeft, Check, Sparkles } from "lucide-react";
-import Link from "next/link";
 import { ScoreRing } from "../../../_components/score-ring";
 import { ProgressState } from "./progress-state";
 import { ResumePane } from "./resume-pane";
@@ -93,12 +92,12 @@ export function TailorView(props: Props) {
   return (
     <div>
       <header className="mb-8">
-        <Link
+        <a
           href="/dashboard"
           className="mb-4 inline-flex items-center gap-1 text-sm text-white/40 transition-colors hover:text-white/80"
         >
           <ArrowLeft className="h-4 w-4" strokeWidth={1.5} /> Back to matches
-        </Link>
+        </a>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-xl font-medium tracking-tight md:text-2xl">{props.jobTitle}</h1>
