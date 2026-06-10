@@ -28,6 +28,7 @@ model User {
   jobMatches       UserJobMatch[]
   blockedCompanies UserBlockedCompany[]
   resumes          ResumeVersion[]
+  tailoredResumes  TailoredResume[]
 }
 
 model UserPreference {
@@ -138,6 +139,7 @@ model Job {
   applications    Application[]
   resumeVersions  ResumeVersion[]
   matches         UserJobMatch[]
+  tailoredResumes TailoredResume[]
 
   @@index([company])
   @@index([source])
@@ -167,6 +169,7 @@ model UserJobMatch {
   dismissedAt   DateTime?
   dismissed     Boolean  @default(false)
   autoDismissed Boolean  @default(false)
+  tailoredResume TailoredResume?
 
   @@unique([userId, jobId])
   @@index([userId, matchScore])
@@ -221,6 +224,7 @@ model ResumeVersion {
 
   createdAt    DateTime      @default(now())
   applications Application[]
+  tailoredResumes TailoredResume[]
 
   @@index([userId])
   @@index([userId, isMaster])
@@ -244,3 +248,46 @@ model UserBlockedCompany {
   @@index([companyId])
 }
 
+
+// ============================================================
+// TAILORED RESUMES (Phase 2G)
+// ============================================================
+// One TailoredResume per UserJobMatch (idempotent — re-tailoring re-uses
+// the row, preserving the user's curation work across sessions).
+//
+// Master stays in ResumeVersion as locked truth. Tailored variants here.
+// Master-switching is non-destructive (resume.ts) so masterResumeId stays
+// stable even after the user switches active master.
+//
+// Generation is on-demand from the UI — never pre-computed. tailoredJson
+// + changeLedger are written by the engine (services/ai/tailor.ts).
+//
+// PDF render is from tailoredJson on demand — never stored as a file.
+// Same render path serves Download now and Playwright auto-fill (2H).
+
+model TailoredResume {
+  id                String       @id @default(cuid())
+  matchId           String       @unique
+  match             UserJobMatch @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  masterResumeId    String
+  master            ResumeVersion @relation(fields: [masterResumeId], references: [id])
+  jobId             String
+  job               Job          @relation(fields: [jobId], references: [id])
+
+  tailoredJson      Json         // tailored content: summary, skills[], workHistory[]
+  changeLedger      Json         @default("[]") // array of per-change provenance records
+  verificationResult Json?       // output of verification pass; null until verified
+
+  status            String       @default("generated") // "generated" | "verified" | "saved"
+  generationVersion String       // e.g. "cerebras-gpt-oss-120b-tailor-v1"
+  tokensUsed        Int?         // total LLM tokens consumed across all calls for this tailoring
+
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([userId, status])
+  @@index([masterResumeId])
+  @@index([jobId])
+}

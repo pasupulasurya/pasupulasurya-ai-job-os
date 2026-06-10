@@ -1405,3 +1405,103 @@ they don't repeat in 2G:
    closed). Catching pre-commit-hook failures during the chunk where
    the mistake was made is cheaper than catching them at push time
    with stash-restore friction.
+
+## SESSION LOG — 2026-06-09/10 (late evening) — 2G.0 + 2G.1 SHIPPED
+
+> Most recent state; supersedes older notes where they conflict.
+
+### Shipped to main earlier this session
+
+- **2G.0 Cerebras provider (merged, PR #4-equivalent).** CerebrasProvider
+  implements LLMProvider. Free tier verified via curl: 5 req/min, 150/hr,
+  2400/day; 30K tok/min, 1M/hr, 1M/day. Models on tier: gpt-oss-120b
+  (default), zai-glm-4.7 — BOTH reasoning models (chain-of-thought
+  consumes tokens before output; default maxTokens 2048 vs Groq's 512).
+  Llama models NOT on current Cerebras free tier despite older docs.
+- **RLS enabled on all 9 public tables + TailoredResume** (Supabase
+  security advisor was flagging rls_disabled_in_public on everything;
+  app unaffected — all DB access via Prisma/service role; zero
+  supabase.from() in app code).
+- **Duplicate `.env.local ` file (trailing space) deleted.**
+
+### Shipped to feat/2g1-tailoring-engine (pushed, PR pending)
+
+- **TailoredResume schema** — keyed unique on matchId (idempotent
+  re-use = locked decision; re-tailoring resumes the draft). FKs:
+  userId (Cascade), matchId (Cascade), masterResumeId (Restrict),
+  jobId (Restrict). Json fields: tailoredJson, changeLedger,
+  verificationResult. status: generated|verified|saved.
+  generationVersion current: cerebras-gpt-oss-120b-tailor-v2.
+- **tailor.ts engine.** tailorResumeForMatch: idempotency check ->
+  load master+match+job -> derive matched/gap skills (code set-diff,
+  not LLM) -> summary rewrite -> per-role BATCHED bullet rephrase ->
+  verify->retry->fallback per item -> assemble -> persist. Education +
+  personal info copied verbatim, never sent to LLM. Skills ordering is
+  code (matched-first), not LLM.
+- **verify.ts two-layer verification.** Layer 1 code drift check
+  (invented numbers + DRIFT_TERM_PATTERNS domain qualifiers) — free,
+  per-item, fails fast. Layer 2 LLM verifier. BATCHED per role
+  (verifyBulletsBatch: one call per role, per-index verdicts, strict
+  length validation, silent-skip = hard error). Summary verified
+  against FULL master corpus (summary+skills+all bullets) — surfacing
+  unstated-but-true content from workHistory is legitimate;
+  job-domain language absent from master is fabrication, including
+  aspirational framing ("aim to apply to safety-focused...").
+- **Retry-then-fallback quality model (locked):** flagged item gets
+  ONE retry with violations fed back; fallback to master verbatim is
+  the worst-worst case (target <5%); gap-closing has NO fallback —
+  hard error tells the user to rephrase evidence.
+- **generateBulletFromEvidence.** Evidence = truth source. AI
+  classifies new_bullet vs augment_bullet (AI proposes — locked).
+  Structural validation of indices. Verified against evidence.
+  Write-back of confirmed skill to master parsedJson at CONFIRM-TIME
+  (locked). Ledger entry with full provenance.
+- **Harness 7/7 (test-tailor-harness.ts, zero DB writes).** Full-loop
+  adversarial tests: fintech-bait rephrase stayed clean; thin evidence
+  ("I know Spark") correctly REFUSED rather than inflated; rich
+  evidence converged on retry (verifier corrected "entire year" ->
+  "approximately one year").
+
+### Proven on real data (smoke tests)
+
+- v1 prompts inserted "safety" domain terms into BYJU'S bullets for an
+  OpenAI Safety job — exactly the fabrication failure mode. v2
+  integrity rules + verifier eliminated it. Verifier also caught
+  "Streamlined" vs master's "Helped streamline" (strength inflation)
+  and retry corrected it.
+- Batching cut runtime 184s -> 63s per resume (~6 requests; Cerebras
+  5 req/min is the binding constraint, near request-count floor).
+
+### NEW LOCKED DECISIONS
+
+- Tailoring generation model: cerebras gpt-oss-120b (only viable
+  instruction model on tier; reasoning overhead accepted, maxTokens
+  2048 default).
+- Verification batched per role; summary verified against full master
+  corpus; aspirational domain claims = fabrication.
+- Thin-evidence refusal is correct UX: loop errors with "rephrase
+  your evidence with more specifics" rather than emit weak/inflated
+  bullets.
+
+### KNOWN FOLLOW-UPS (filed, not blockers)
+
+- tokensUsed always null — provider doesn't surface usage; needs
+  LLMProvider interface change (ripples to Groq). tokensUsed measured
+  manually via harness for now.
+- Skill write-back doesn't bump matchVersion hash — match scores
+  don't refresh until another input changes.
+- Smoke-test diff display assumes a ledger entry per bullet; identical
+  rephrases (no change -> no entry) show "(no master text recorded)".
+  Display-only.
+- ~63s per tailoring run: acceptable with progress UI in 2G.2; further
+  speedup requires fewer calls, not faster ones.
+- Test user's master got "kubernetes" written back during smoke —
+  real data mutation on the test account, harmless.
+
+### NEXT SESSION: 2G.2 — /dashboard/tailor/[matchId] UI
+
+Engine API surface is complete: tailorResumeForMatch +
+generateBulletFromEvidence. UI spec fully locked in the Phase 2G
+design section above (side-by-side panes, gap panel, curation
+controls, Save/Download bar, master-update acknowledgment, mobile
+tabs). Needs a progress state for the ~60s generation wait.
