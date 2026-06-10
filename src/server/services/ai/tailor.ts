@@ -754,3 +754,176 @@ Remove every violation. Do not introduce new ones.`,
     resumed: false,
   };
 }
+
+// ============================================================
+// GAP-CLOSING
+// ============================================================
+// User confirms a gap skill is true + supplies evidence. AI classifies
+// new_bullet vs augment_bullet and writes the line. Verified against the
+// evidence + parent. On verified success:
+//   1. tailoredJson updated, ledger appended
+//   2. skill written back to master parsedJson (confirm-time, locked decision)
+// No fallback path — if generation can't ground the evidence after one
+// retry, we error and the UI asks the user to rephrase their evidence.
+
+export async function generateBulletFromEvidence(
+  input: GapClosingInput,
+): Promise<GapClosingResult> {
+  const row = await prisma.tailoredResume.findUnique({
+    where: { matchId: input.matchId },
+  });
+  if (!row) throw new Error("No tailored resume for this match — generate first");
+  if (row.userId !== input.userId) throw new Error("Not your tailored resume");
+
+  const master = await prisma.resumeVersion.findUnique({
+    where: { id: row.masterResumeId },
+  });
+  if (!master) throw new Error("Master resume not found");
+  const parsed = readMasterParsed(master.parsedJson);
+  const workHistory = (parsed.workHistory ?? []).map((r) => ({
+    title: r.title ?? null,
+    company: r.company ?? null,
+    bullets: r.bullets ?? [],
+  }));
+
+  const cerebras = new CerebrasProvider();
+
+  // Generate with one retry on verification failure.
+  let output: z.infer<typeof GapClosingOutputSchema> | null = null;
+  let verifyReasons: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const retryNote =
+      attempt > 0
+        ? `\n\nPREVIOUS ATTEMPT WAS REJECTED FOR THESE VIOLATIONS:\n${verifyReasons.map((r) => "- " + r).join("\n")}\nRemove every violation. Use ONLY what the evidence states.`
+        : "";
+    const candidate = await cerebras.generate({
+      system: __internals.GAP_CLOSING_SYSTEM_PROMPT,
+      user:
+        __internals.buildGapClosingUserPrompt({
+          skill: input.skill,
+          evidence: input.evidence,
+          workHistory,
+        }) + retryNote,
+      schema: GapClosingOutputSchema,
+      maxTokens: 2048,
+    });
+
+    // Structural validation: indices must point at real content.
+    const role = workHistory[candidate.parentRoleIndex];
+    if (!role) {
+      verifyReasons = [`parentRoleIndex ${candidate.parentRoleIndex} does not exist`];
+      continue;
+    }
+    if (candidate.move === "augment_bullet") {
+      if (
+        candidate.parentBulletIndex === null ||
+        role.bullets[candidate.parentBulletIndex] === undefined
+      ) {
+        verifyReasons = [`augment_bullet with invalid parentBulletIndex`];
+        continue;
+      }
+    }
+    if (candidate.move === "new_bullet" && candidate.parentBulletIndex !== null) {
+      verifyReasons = [`new_bullet must have null parentBulletIndex`];
+      continue;
+    }
+
+    // Integrity verification: truth source = evidence (+ parent bullet for augment).
+    const truthSource =
+      candidate.move === "augment_bullet"
+        ? `${input.evidence}\n${role.bullets[candidate.parentBulletIndex!]}`
+        : input.evidence;
+    const v = await verifyBullet(cerebras, truthSource, candidate.bulletText);
+    if (v.ok) {
+      output = candidate;
+      break;
+    }
+    verifyReasons = v.reasons;
+    logger.warn(
+      { matchId: input.matchId, skill: input.skill, attempt, violations: v.reasons },
+      "tailor.gap_closing_drift_flagged",
+    );
+  }
+
+  if (!output) {
+    throw new Error(
+      `Couldn't ground a bullet in your evidence (violations: ${verifyReasons.join("; ")}). Try rephrasing your evidence with more specifics.`,
+    );
+  }
+
+  // Apply to tailoredJson.
+  const tailoredJson = row.tailoredJson as TailoredJson;
+  const targetRole = tailoredJson.workHistory[output.parentRoleIndex];
+  if (!targetRole) throw new Error("Target role missing from tailoredJson");
+
+  let targetBulletIndex: number | null;
+  let beforeText: string | null;
+  if (output.move === "augment_bullet") {
+    targetBulletIndex = output.parentBulletIndex!;
+    beforeText = targetRole.bullets[targetBulletIndex]?.text ?? null;
+    targetRole.bullets[targetBulletIndex] = {
+      ...targetRole.bullets[targetBulletIndex],
+      text: output.bulletText,
+    };
+  } else {
+    beforeText = null;
+    targetRole.bullets.push({
+      id: `n:${Date.now()}`,
+      text: output.bulletText,
+      parentMasterBulletId: null,
+    });
+    targetBulletIndex = targetRole.bullets.length - 1;
+  }
+
+  const newLedgerEntry: ChangeLedgerRecord = {
+    move: output.move,
+    skillClosed: input.skill,
+    evidence: input.evidence,
+    targetRoleIndex: output.parentRoleIndex,
+    targetBulletIndex,
+    parentMasterBulletId:
+      output.move === "augment_bullet"
+        ? masterBulletId(output.parentRoleIndex, output.parentBulletIndex!)
+        : null,
+    beforeText,
+    afterText: output.bulletText,
+    reverted: false,
+  };
+  const ledger = [...(row.changeLedger as ChangeLedgerRecord[]), newLedgerEntry];
+
+  // Write-back: skill flows into master parsedJson at confirm-time (locked).
+  const masterSkills = parsed.skills ?? [];
+  const skillExists = masterSkills.some((s) => s.toLowerCase() === input.skill.toLowerCase());
+  if (!skillExists) {
+    await prisma.resumeVersion.update({
+      where: { id: master.id },
+      data: {
+        parsedJson: { ...(master.parsedJson as object), skills: [...masterSkills, input.skill] },
+      },
+    });
+    logger.info(
+      { masterResumeId: master.id, skill: input.skill },
+      "tailor.skill_written_back_to_master",
+    );
+  }
+
+  // Persist tailoredJson + ledger.
+  await prisma.tailoredResume.update({
+    where: { id: row.id },
+    data: { tailoredJson, changeLedger: ledger },
+  });
+
+  logger.info(
+    { matchId: input.matchId, skill: input.skill, move: output.move },
+    "tailor.gap_closed",
+  );
+
+  return {
+    move: output.move,
+    targetRoleIndex: output.parentRoleIndex,
+    targetBulletIndex,
+    bulletText: output.bulletText,
+    tailoredJson,
+    newLedgerEntry,
+  };
+}
