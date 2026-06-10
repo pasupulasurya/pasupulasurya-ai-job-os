@@ -1505,3 +1505,15 @@ generateBulletFromEvidence. UI spec fully locked in the Phase 2G
 design section above (side-by-side panes, gap panel, curation
 controls, Save/Download bar, master-update acknowledgment, mobile
 tabs). Needs a progress state for the ~60s generation wait.
+
+### 2G.2 DESIGN AMENDMENT — conversational evidence gathering (2026-06-09 evening)
+
+Gap-closing is a mini conversation thread per skill, not a one-shot
+evidence box. New LLM job type "evidence interviewer": per turn decides
+enough-to-ground -> generate, or ask ONE targeted follow-up (max 2-3
+follow-ups, then generate with what's there or honestly refuse).
+Accumulated thread = the evidence passed to generateBulletFromEvidence;
+verification unchanged (thread = truth source). Ledger entry gains a
+`conversation` field (full Q&A turns) so the user can always see what
+was asked and answered. Changes on the tailored pane are clickable ->
+before/after + skill served + evidence thread + verification status.

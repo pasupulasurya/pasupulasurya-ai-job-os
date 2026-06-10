@@ -54,6 +54,11 @@ export const ChangeLedgerRecordSchema = z.object({
   afterText: z.string(),
   // User can revert any change; reverted records stay in ledger for audit.
   reverted: z.boolean().default(false),
+  // Full Q&A thread for gap-closing moves (2G.2 amendment). Null otherwise.
+  conversation: z
+    .array(z.object({ role: z.enum(["ai", "user"]), text: z.string() }))
+    .nullable()
+    .default(null),
 });
 export type ChangeLedgerRecord = z.infer<typeof ChangeLedgerRecordSchema>;
 
@@ -147,6 +152,7 @@ export type GapClosingInput = {
   userId: string;
   skill: string;
   evidence: string;
+  conversation?: ConversationMessage[];
 };
 
 export type GapClosingResult = {
@@ -543,6 +549,7 @@ Remove every violation. Do not introduce new ones.`,
       beforeText: masterSummary || null,
       afterText: finalSummary,
       reverted: false,
+      conversation: null,
     });
   }
 
@@ -664,6 +671,7 @@ Remove every violation. Do not introduce new ones.`,
               beforeText: masterText,
               afterText: finalText,
               reverted: false,
+              conversation: null,
             });
           }
           logger.info(
@@ -888,6 +896,7 @@ export async function generateBulletFromEvidence(
     beforeText,
     afterText: output.bulletText,
     reverted: false,
+    conversation: input.conversation ?? null,
   };
   const ledger = [...(row.changeLedger as ChangeLedgerRecord[]), newLedgerEntry];
 
@@ -926,4 +935,90 @@ export async function generateBulletFromEvidence(
     tailoredJson,
     newLedgerEntry,
   };
+}
+
+// ============================================================
+// EVIDENCE INTERVIEWER (2G.2 amendment)
+// ============================================================
+// Conversational gap-closing. One call per turn: decide whether the
+// accumulated evidence is enough to ground a strong bullet, ask ONE
+// targeted follow-up, or refuse. Never leads the witness — open
+// questions only (suggesting answers would feed fabrication).
+
+export const InterviewTurnSchema = z.object({
+  action: z.enum(["ask", "generate", "refuse"]),
+  question: z.string().nullable(),
+});
+export type InterviewTurn = z.infer<typeof InterviewTurnSchema>;
+
+export type ConversationMessage = { role: "ai" | "user"; text: string };
+
+const INTERVIEWER_SYSTEM_PROMPT = `\
+You are gathering evidence from a job candidate about ONE specific skill, so a
+truthful resume bullet can be written from their answers. You ask short, open
+questions. You NEVER suggest answers, examples, or scenarios — suggesting
+("did you deploy it in production?") would put words in their mouth and lead
+to fabrication. Open questions only ("what did you do with it?").
+
+Decide each turn:
+- "ask": evidence so far is too thin to ground a strong bullet. Ask ONE short
+  targeted follow-up. Good follow-ups dig for: where they used it, what they
+  actually did, rough duration or scope. One question at a time.
+- "generate": the answers contain enough concrete detail (a place + what they
+  did + some scope/duration) to write a grounded bullet. Stop asking.
+- "refuse": the candidate's answers show they do NOT actually have this skill
+  ("I don't know it", "never used it") or are entirely off-topic.
+
+You may ask at most 3 questions total across the conversation. If the
+conversation already contains 3 AI questions, you MUST choose "generate"
+(if anything groundable exists) or "refuse" (if nothing does).
+
+Output strict JSON: { "action": "ask"|"generate"|"refuse", "question": "<text or null>" }
+question must be null unless action is "ask".`;
+
+function buildInterviewerUserPrompt(skill: string, conversation: ConversationMessage[]): string {
+  const thread =
+    conversation.length === 0
+      ? "(conversation has not started — ask the opening question)"
+      : conversation
+          .map((m) => `${m.role === "ai" ? "YOU ASKED" : "CANDIDATE"}: ${m.text}`)
+          .join("\n");
+  const aiQuestionCount = conversation.filter((m) => m.role === "ai").length;
+  return `\
+SKILL BEING DISCUSSED: ${skill}
+
+CONVERSATION SO FAR:
+${thread}
+
+AI QUESTIONS ASKED SO FAR: ${aiQuestionCount} of 3 max.
+
+Decide: ask / generate / refuse. Output JSON.`;
+}
+
+export async function interviewForEvidence(input: {
+  skill: string;
+  conversation: ConversationMessage[];
+}): Promise<InterviewTurn> {
+  const cerebras = new CerebrasProvider();
+  const result = await cerebras.generate({
+    system: INTERVIEWER_SYSTEM_PROMPT,
+    user: buildInterviewerUserPrompt(input.skill, input.conversation),
+    schema: InterviewTurnSchema,
+    maxTokens: 1024,
+  });
+  // Enforce the cap in code too — never trust the model alone.
+  const aiQuestions = input.conversation.filter((m) => m.role === "ai").length;
+  if (result.action === "ask" && aiQuestions >= 3) {
+    return { action: "generate", question: null };
+  }
+  return result;
+}
+
+// Concatenate the user's answers into the evidence string for
+// generateBulletFromEvidence. The full thread is stored in the ledger.
+export function conversationToEvidence(conversation: ConversationMessage[]): string {
+  return conversation
+    .filter((m) => m.role === "user")
+    .map((m) => m.text)
+    .join(" ");
 }
