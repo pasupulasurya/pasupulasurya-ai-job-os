@@ -6,7 +6,7 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
-import { ResumeDocument, type ResumePdfData } from "@/server/pdf/resume-document";
+import { ResumeDocument, pdfSafe, type ResumePdfData } from "@/server/pdf/resume-document";
 import type { TailoredJson } from "@/server/services/ai/tailor";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +71,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ matchId
   };
 
   try {
-    const buffer = await renderToBuffer(<ResumeDocument data={data} />);
+    // Normalize typographic chars Helvetica can't shape (single choke point).
+    const safeData = JSON.parse(
+      JSON.stringify(data, (_k, v) => (typeof v === "string" ? pdfSafe(v) : v)),
+    ) as ResumePdfData;
+    const buffer = await renderToBuffer(<ResumeDocument data={safeData} />);
     const safeName = (data.name || "resume").replace(/[^a-zA-Z0-9]+/g, "-");
     logger.info({ matchId, userId: appUser.id }, "tailor.pdf_rendered");
     return new NextResponse(new Uint8Array(buffer), {

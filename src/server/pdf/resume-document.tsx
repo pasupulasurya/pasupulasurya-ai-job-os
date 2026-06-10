@@ -5,6 +5,24 @@
 import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import type { TailoredJson } from "@/server/services/ai/tailor";
 
+// Helvetica via react-pdf silently DROPS several typographic characters
+// (verified: U+2011 non-breaking hyphen vanished from rendered output).
+// Normalize to ASCII equivalents at render time only — stored content
+// stays untouched.
+const CHAR_MAP: Array<[RegExp, string]> = [
+  [/[‐‑‒–−]/g, "-"], // hyphens/en-dash/minus -> hyphen
+  [/—/g, " - "], // em-dash
+  [/[‘’‚]/g, "'"],
+  [/[“”„]/g, '"'],
+  [/…/g, "..."],
+  [/ /g, " "], // nbsp
+];
+export function pdfSafe(text: string): string {
+  let out = text;
+  for (const [re, repl] of CHAR_MAP) out = out.replace(re, repl);
+  return out;
+}
+
 export type ResumePdfData = {
   name: string;
   email: string | null;
