@@ -6,24 +6,16 @@ import { renderToBuffer } from "@react-pdf/renderer";
 import { prisma } from "@/server/lib/prisma";
 import { createSupabaseServerClient } from "@/server/lib/supabase-server";
 import { logger } from "@/server/lib/logger";
-import { ResumeDocument, pdfSafe, type ResumePdfData } from "@/server/pdf/resume-document";
+import {
+  ResumeDocument,
+  pdfSafe,
+  assembleResumePdfData,
+  type ResumePdfData,
+  type ParsedPersonal,
+} from "@/server/pdf/resume-document";
 import type { TailoredJson } from "@/server/services/ai/tailor";
 
 export const dynamic = "force-dynamic";
-
-type ParsedPersonal = {
-  fullName?: string | null;
-  email?: string | null;
-  phone?: string | null;
-  location?: string | null;
-  education?: Array<{
-    school?: string | null;
-    degree?: string | null;
-    field?: string | null;
-    startYear?: number | null;
-    endYear?: number | null;
-  }> | null;
-};
 
 export async function GET(_req: Request, { params }: { params: Promise<{ matchId: string }> }) {
   const { matchId } = await params;
@@ -51,24 +43,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ matchId
   const tailored = row.tailoredJson as TailoredJson;
   const parsed = (row.master.parsedJson ?? {}) as ParsedPersonal;
 
-  // User row first, parsed fallback per-field.
-  const userName = [appUser.firstName, appUser.lastName].filter(Boolean).join(" ");
-  const data: ResumePdfData = {
-    name: userName || parsed.fullName || "Resume",
-    email: appUser.email || parsed.email || null,
-    phone: appUser.phone || parsed.phone || null,
-    location: parsed.location ?? null,
-    summary: tailored.summary,
-    skills: tailored.skills,
-    workHistory: tailored.workHistory,
-    education: (parsed.education ?? []).map((e) => ({
-      school: e.school ?? null,
-      degree: e.degree ?? null,
-      field: e.field ?? null,
-      startYear: e.startYear ?? null,
-      endYear: e.endYear ?? null,
-    })),
-  };
+  const data: ResumePdfData = assembleResumePdfData({
+    user: appUser,
+    parsed,
+    tailored,
+  });
 
   try {
     // Normalize typographic chars Helvetica can't shape (single choke point).

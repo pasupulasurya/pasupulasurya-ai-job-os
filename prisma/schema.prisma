@@ -29,6 +29,7 @@ model User {
   blockedCompanies UserBlockedCompany[]
   resumes          ResumeVersion[]
   tailoredResumes  TailoredResume[]
+  applyProfile     ApplyProfile?
 }
 
 model UserPreference {
@@ -291,4 +292,51 @@ model TailoredResume {
   @@index([userId, status])
   @@index([masterResumeId])
   @@index([jobId])
+}
+
+// Application answers — the user's standing answers to the standard
+// questions every job portal asks. Fill engine (2H) copies these
+// verbatim; null = unanswered = engine defers the field to the human.
+// DELIBERATELY excluded from computeMatchVersion: these are apply-time
+// answers, not match inputs. Changing them must never re-score jobs.
+model ApplyProfile {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Work authorization
+  workAuthorizedUS    Boolean?
+  requiresSponsorship Boolean?
+  over18              Boolean?
+
+  // Education (suggested from master parsedJson, user-confirmed)
+  degreeLevel         String?  // "high_school" | "associate" | "bachelors" | "masters" | "doctorate"
+  schoolName          String?
+  graduationYear      Int?
+
+  // Voluntary self-identification (EEO). "decline" is a first-class
+  // answer meaning the user chose "prefer not to answer".
+  gender              String?  // "male" | "female" | "non_binary" | "decline"
+  hispanicLatino      String?  // "yes" | "no" | "decline"
+  raceEthnicity       String?  // standard EEO categories | "decline"
+  veteranStatus       String?  // "not_veteran" | "veteran" | "decline"
+  disabilityStatus    String?  // "yes" | "no" | "decline"
+
+  // Links (parsedJson values offered as suggestions; these are the truth)
+  linkedinUrl         String?
+  githubUrl           String?
+  portfolioUrl        String?
+
+  // Recurring standard questions
+  salaryExpectation   String?  // user's own phrasing, e.g. "Negotiable"
+  earliestStartDate   String?  // free text, e.g. "2 weeks notice"
+  willingToRelocate   Boolean?
+  previouslyEmployed  Boolean? // "have you worked for this company before"
+  referredByEmployee  String?  // referrer name, usually null
+
+  // Standard portal question
+  howDidYouHear       String?  // default answer e.g. "Job board"
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }

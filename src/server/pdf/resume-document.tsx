@@ -141,3 +141,46 @@ export function ResumeDocument({ data }: { data: ResumePdfData }) {
     </Document>
   );
 }
+
+// ── Shared data assembly ────────────────────────────────────────────
+// One assembly path for both consumers: the PDF API route and the
+// 2H apply lab. User row first, master parsedJson fallback per-field.
+
+export type ParsedPersonal = {
+  fullName?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  location?: string | null;
+  education?: Array<{
+    school?: string | null;
+    degree?: string | null;
+    field?: string | null;
+    startYear?: number | null;
+    endYear?: number | null;
+  }> | null;
+};
+
+export function assembleResumePdfData(input: {
+  user: { firstName: string | null; lastName: string | null; email: string; phone: string | null };
+  parsed: ParsedPersonal;
+  tailored: TailoredJson;
+}): ResumePdfData {
+  const { user, parsed, tailored } = input;
+  const userName = [user.firstName, user.lastName].filter(Boolean).join(" ");
+  return {
+    name: userName || parsed.fullName || "Resume",
+    email: user.email || parsed.email || null,
+    phone: user.phone || parsed.phone || null,
+    location: parsed.location ?? null,
+    summary: tailored.summary,
+    skills: tailored.skills,
+    workHistory: tailored.workHistory,
+    education: (parsed.education ?? []).map((e) => ({
+      school: e.school ?? null,
+      degree: e.degree ?? null,
+      field: e.field ?? null,
+      startYear: e.startYear ?? null,
+      endYear: e.endYear ?? null,
+    })),
+  };
+}
