@@ -1686,3 +1686,95 @@ CAPACITY MATH (verified Cerebras headers): tailoring costs ~10-15 req
 NEXT SESSION: open fresh thread from the four-file bundle. Start
 2H.0 — or first the pre-invite carry-forwards (email/domain decision,
 tailor rate guard, resolveSiteUrl stash).
+
+### SESSION LOG — 2026-06-10 (evening) — 2H.0 APPLY LAB + 2H.0.5a APPLY PROFILE (verified: 4aa148d #10 on main)
+
+Shipped (one squash PR, two stacked commits):
+
+- **2H.0 fill engine + Playwright apply lab.** Browser-portable engine
+  in src/apply/ (types / detect-fields / fill-plan / execute-fill):
+  closed ProfileKey provenance set — every fill cites a source key,
+  unknowns become defer_to_human with amber outline, NEVER guesses.
+  React-controlled inputs filled via native setter + input/change
+  events. Lab harness (scripts/apply-lab.ts, npm run apply:lab --
+  --matchId=...) loads target via Prisma, renders tailored PDF through
+  new shared assembleResumePdfData (PDF route refactored onto the same
+  path — one assembly, two consumers), launches headed persistent
+  Chromium (.apply-lab-profile/, gitignored — portal logins persist,
+  credentials never touch repo), bundles engine via esbuild, injects,
+  fills, summarizes, pauses forever. NEVER submits.
+- **Greenhouse DOM evidence (DoorDash ML Engineer form):** GH uses
+  element id as field identifier (id=resume, candidate-location,
+  school--0), name= is always null, aria-labels only on basics. v1
+  detection (label+name) got 7 fills / 34 defers all "(unnamed)";
+  id-aware patch (id in label fallback + match haystacks + noise
+  exclusion for recaptcha and intl-tel-input) verified live: 41 fields,
+  7 filled, 0 guesses, resume input correctly planned upload_resume.
+  Dropdowns are react-select comboboxes (typeless inputs + hidden
+  question_N text input) — own interaction pass needed (2H.0.5b).
+- **2H.0.5a apply profile page.** ApplyProfile table (1:1 User, lazily
+  created on first save — no signup trigger, no backend weight until
+  used; RLS enabled in dashboard). /apply-profile route + nav item
+  (between Dismissed and Settings, ClipboardList icon). Sections:
+  identity/contact (read-only, links to Settings — single source of
+  truth, no duplicate editing), work auth trio, education, links,
+  recurring questions (salary expectation, start date, relocate,
+  previously employed, referred by, how did you hear), EEO
+  self-identification. OptionRow pill primitive: tri-state, click
+  active pill to un-answer, nothing ever preselected.
+
+NEW LOCKED DECISIONS:
+
+- **ApplyProfile is EXCLUDED from computeMatchVersion.** Apply answers
+  are not match inputs; changing veteran status must never re-score
+  771 jobs. Own table (not UserPreference) enforces the boundary.
+- **Null vs decline are distinct first-class states.** Null =
+  unanswered = engine defers the field to the human on every form.
+  "decline" = user chose "Prefer not to answer" = engine selects
+  "decline to self-identify". Nothing defaults.
+- **Fixed-set vs long-tail question architecture.** ApplyProfile holds
+  only the closed standardized set (~20 fields, ever). The unbounded
+  long tail ("Why DoorDash?") is 2H.3 LLM answers with verification.
+  Bridge filed for 2H.3: SavedAnswer concept — user-approved answers
+  to recurring custom questions stored as confirmed reusable truth.
+  Pre-enumerating thousands of questions was considered and rejected
+  (heavy onboarding, heavy backend, still incomplete).
+- **Lenient-in strict-out URL pattern.** Link fields z.preprocess:
+  trim, empty to null, prepend https:// when scheme missing, THEN
+  .url() validates. Same family as Y-lenient phone normalization.
+  Found live: linkedin.com/in/... rejected by bare .url().
+- **previouslyEmployed stores the general answer**; fill engine must
+  amber-defer it when the target company makes the stored answer
+  unsafe to copy (2H.0.5b fill-plan rule).
+
+LESSONS:
+
+- **Bare tsx skips .env.local.** Prisma ECONNREFUSED chased toward
+  pooler/network; real cause: repo scripts all wrap with dotenv -e
+  .env.local, a bare npx tsx run loads nothing and Prisma dials
+  localhost. Retroactively explains the 06-09 list-users ECONNREFUSED
+  (likely never a Supabase outage). Fix: npx tsx --env-file=.env.local
+  or the npm script wrappers. Also: /tmp scripts cannot resolve repo
+  node_modules — probes live in scripts/probes/ (gitignored).
+- **Confirm-write-landed before running gates — bit us twice.** Two
+  patch blocks in one reply went unrun; gates then validated stale
+  files (form missing sections; commit used stale /tmp/commit-msg.txt
+  and got the wrong subject, amended + force-pushed pre-PR). Rule
+  reinforced: one runnable block per step where possible, grep-count
+  the write in the same command chain as the gates.
+
+CARRIED FORWARD (2H next steps):
+
+- **Lab resume-upload verification run** — harness Phase-1 filter
+  patch written (id in the file-input haystack) but the verifying run
+  was preempted by the 2H.0.5 pivot. First task next lab session;
+  also replace positional input[type=file] indexing with ref-targeted
+  selection.
+- **2H.0.5b** — extend ProfileKey with ApplyProfile-backed keys +
+  select/radio/react-select interaction in the engine, verified
+  against the DoorDash form's 14 deferred dropdowns.
+- Standing items unchanged: email/domain decision, resolveSiteUrl
+  stash, 37 stale matcher-v1 matches, test-user cleanup.
+
+NOTE: squash subject on main reads "Feat/2h05 apply profile" (#10) —
+auto-title slipped through; contents are the two commits above.
