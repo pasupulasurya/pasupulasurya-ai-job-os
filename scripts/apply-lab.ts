@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prisma } from "../src/server/lib/prisma";
 import type { ApplicantProfile } from "../src/apply/types";
+import { decideAnswers, type GHAnswerProfile } from "../src/apply/gh-questions";
+import { fetchGHQuestions } from "../src/server/services/apply/gh-job-questions";
 
 function getArg(name: string): string | null {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -20,9 +22,20 @@ async function loadTarget(matchId: string) {
   const row = await prisma.tailoredResume.findUnique({
     where: { matchId },
     include: {
-      user: { select: { firstName: true, lastName: true, email: true, phone: true } },
+      user: {
+        select: { firstName: true, lastName: true, email: true, phone: true, applyProfile: true },
+      },
       master: { select: { parsedJson: true } },
-      job: { select: { title: true, company: true, sourceUrl: true, source: true } },
+      job: {
+        select: {
+          title: true,
+          company: true,
+          sourceUrl: true,
+          source: true,
+          companySlug: true,
+          externalId: true,
+        },
+      },
     },
   });
   if (!row) throw new Error(`No TailoredResume for matchId=${matchId}`);
@@ -153,6 +166,50 @@ async function main() {
   console.log(`Skipped (portal prefilled): ${summary.skippedPrefilled}`);
   console.log(`Deferred to you (amber outline): ${summary.deferred.length}`);
   for (const d of summary.deferred) console.log(`  - [${d.label}] ${d.reason}`);
+  // Phase 3: GH question semantics from the public API -> select fills.
+  if (row.job.source === "greenhouse" && row.job.companySlug && row.job.externalId) {
+    const ap = row.user.applyProfile;
+    const ghProfile: GHAnswerProfile = {
+      workAuthorizedUS: ap?.workAuthorizedUS ?? null,
+      requiresSponsorship: ap?.requiresSponsorship ?? null,
+      previouslyEmployed: ap?.previouslyEmployed ?? null,
+      gender: ap?.gender ?? null,
+      hispanicLatino: ap?.hispanicLatino ?? null,
+      raceEthnicity: ap?.raceEthnicity ?? null,
+      veteranStatus: ap?.veteranStatus ?? null,
+      disabilityStatus: ap?.disabilityStatus ?? null,
+      linkedinUrl: ap?.linkedinUrl ?? null,
+      githubUrl: ap?.githubUrl ?? null,
+      portfolioUrl: ap?.portfolioUrl ?? null,
+      location: null,
+    };
+    const questions = await fetchGHQuestions(row.job.companySlug, row.job.externalId);
+    const decisions = decideAnswers(questions, ghProfile);
+    console.log(`\n── GH question decisions (${questions.length} questions) ──`);
+    for (const d of decisions) {
+      if (d.kind === "defer")
+        console.log(`  defer [${d.fieldName}] ${d.label.slice(0, 60)} — ${d.reason}`);
+    }
+    // Phase-3 text fills (links etc.) — decided by the API layer.
+    for (const d of decisions) {
+      if (d.kind !== "fill") continue;
+      try {
+        const input = page.locator(`[id="${d.fieldName}"]`).first();
+        await input.fill(d.value);
+        console.log(`  filled [${d.fieldName}] (from ${d.sourceKey})`);
+      } catch {
+        console.log(`  fill FAILED [${d.fieldName}] — left for you`);
+      }
+    }
+    const sel = await executeSelects(page, decisions);
+    await fillEducation(page, {
+      schoolName: ap?.schoolName ?? null,
+      degreeLevel: ap?.degreeLevel ?? null,
+    });
+    console.log(`Selected: ${sel.selected}`);
+    for (const f of sel.failed) console.log(`  FAILED ${f}`);
+  }
+
   console.log("\nReview the form. This script NEVER submits. Ctrl+C when done.");
   await new Promise(() => undefined); // pause forever
 }
@@ -163,3 +220,82 @@ main()
     process.exit(1);
   })
   .finally(() => void prisma.$disconnect());
+
+/** Execute select decisions via trusted Playwright input. react-select
+ *  ignores synthetic clicks, so this lives in the harness, not the
+ *  injected engine. Targets the combobox inside the container that
+ *  holds the hidden input whose id === fieldName. */
+async function executeSelects(
+  page: import("playwright").Page,
+  decisions: ReturnType<typeof decideAnswers>,
+): Promise<{ selected: number; failed: string[] }> {
+  let selected = 0;
+  const failed: string[] = [];
+  for (const d of decisions) {
+    if (d.kind !== "select") continue;
+    try {
+      const hidden = page.locator(`[id="${d.fieldName}"]`).first();
+      const container = hidden.locator(
+        "xpath=ancestor::*[contains(@class,'select')][1]/ancestor::div[1]",
+      );
+      const combo = container.locator('input[role="combobox"]').first();
+      await combo.click();
+      await combo.fill(d.optionLabel.slice(0, 30));
+      await page.waitForTimeout(400);
+      const option = page.getByRole("option", { name: d.optionLabel, exact: true }).first();
+      await option.click({ timeout: 3000 });
+      selected += 1;
+      console.log(`  selected [${d.fieldName}] = "${d.optionLabel}" (from ${d.sourceKey})`);
+    } catch {
+      failed.push(`${d.fieldName}: "${d.optionLabel}" — option click failed, left for you`);
+    }
+    await page.waitForTimeout(300);
+  }
+  return { selected, failed };
+}
+
+const DEGREE_LABEL: Record<string, string> = {
+  high_school: "High School",
+  associate: "Associate's Degree",
+  bachelors: "Bachelor's Degree",
+  masters: "Master's Degree",
+  doctorate: "Doctorate",
+};
+
+/** Fill GH education typeaheads from stored truth. School is a
+ *  typeahead against GH's database: type stored name, click only an
+ *  option whose text matches exactly (case-insensitive) — otherwise
+ *  leave deferred. Degree is a fixed list via the label table. */
+async function fillEducation(
+  page: import("playwright").Page,
+  ap: { schoolName: string | null; degreeLevel: string | null },
+): Promise<void> {
+  const targets: { id: string; text: string | null; exactOnly: boolean }[] = [
+    { id: "school--0", text: ap.schoolName, exactOnly: true },
+    {
+      id: "degree--0",
+      text: ap.degreeLevel ? (DEGREE_LABEL[ap.degreeLevel] ?? null) : null,
+      exactOnly: false,
+    },
+  ];
+  for (const t of targets) {
+    if (!t.text) {
+      console.log(`  education [${t.id}]: no stored answer — left for you`);
+      continue;
+    }
+    try {
+      const input = page.locator(`[id="${t.id}"]`).first();
+      await input.click();
+      await input.fill(t.text);
+      await page.waitForTimeout(900); // typeahead debounce
+      const option = t.exactOnly
+        ? page.getByRole("option", { name: t.text, exact: true }).first()
+        : page.getByRole("option", { name: t.text }).first();
+      await option.click({ timeout: 3000 });
+      console.log(`  education [${t.id}] = "${t.text}"`);
+    } catch {
+      console.log(`  education [${t.id}]: no exact match for "${t.text}" — left for you`);
+    }
+    await page.waitForTimeout(300);
+  }
+}
