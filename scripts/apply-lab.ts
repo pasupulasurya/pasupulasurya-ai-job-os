@@ -122,8 +122,8 @@ async function main() {
     const fields = eng.detectFields();
     return fields
       .filter(
-        (f: { kind: string; label: string; name: string }) =>
-          f.kind === "file" && /resume|résumé|\bcv\b/i.test(`${f.label} ${f.name}`),
+        (f: { kind: string; label: string; name: string; id: string }) =>
+          f.kind === "file" && /resume|résumé|\bcv\b/i.test(`${f.label} ${f.name} ${f.id}`),
       )
       .map((f: { ref: number }) => f.ref);
   });
