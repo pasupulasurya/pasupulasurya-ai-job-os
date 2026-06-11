@@ -1859,3 +1859,44 @@ KNOWN ISSUES FILED (next session opens here):
    fields — output ordering misleads.
 4. Standing items unchanged (email/domain, resolveSiteUrl stash, stale
    matcher-v1 matches, test-user cleanup).
+
+### PHASE 2J DESIGN — JOB POOL EXPANSION (locked 2026-06-10 evening, build NOT started)
+
+Constraint math first: bottleneck is NOT company count — it's enrichment
+throughput (~415-500/day Groq TPD) and DB cap (500MB Supabase, jobs
+carry description + rawJson). 30-day TTL means steady state = inflow x 30. Inflow budget ~300-400 new jobs/day -> ~10-12k job steady state.
+Expansion must be curated inflow, not raw volume.
+
+Build order (two sessions, veteran-corrected from the naive plan):
+
+**2J.1 — Title pre-filter at scrape time. FIRST, before any new
+companies.** Cohort title allowlist (SWE/ML/DS/data/analyst patterns)
+filters at insert. Fix unit economics before scaling: cuts per-company
+volume 60-80%, pays back immediately on the existing 30 companies,
+makes ~150 companies fit the daily budget. Care: patterns must not
+drop legitimate titles ("Member of Technical Staff"). ~1-2h.
+
+**2J.2 — Sponsor-verified company seeding via INVERTED join.** Do NOT
+normalize H-1B employer names into slug guesses (lossy, low-yield).
+Backwards instead: take already-verified ATS token lists from open
+GitHub datasets (thousands of confirmed GH/Ashby slugs; GH API returns
+clean company_name per token) -> fuzzy-join those clean names AGAINST
+the USCIS H-1B Employer Data Hub CSV (FY2024/2025, free download,
+approval counts per employer; DOL LCA disclosure files add titles +
+wages). Seed top ~100 by approval count with knownToSponsor=true.
+~3-4h.
+
+**Matcher integration:** knownToSponsor is a PRIOR, not a gate — it
+weights the sponsorship dimension only when per-job sponsorsVisa is
+null. Per-job extraction stays the primary signal (Amazon sponsors
+engineers, not recruiters). Inclusion is never decided by it.
+
+**Explicitly REJECTED:** company performance tiering (deactivate on
+zero matches in 30 days) — with one user it overfits the pool to
+Surya personally and silently deletes future friends' best companies.
+Revisit at 10+ users. Also rejected: scraping volume-first then
+filtering later (blows DB + TPD inside a week).
+
+**Also check in 2J.1:** rawJson is the heaviest column — sample avg
+row size; truncating/dropping rawJson for non-matched jobs could
+double DB headroom.
