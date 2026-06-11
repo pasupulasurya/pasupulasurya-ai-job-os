@@ -1785,3 +1785,77 @@ re-applied + annotation fix, rerun confirmed "Resume uploaded" with
 the tailored PDF attached on the GH form. 2H.0 loop fully
 evidence-backed. Note: skipped-prefilled stayed 0 — this GH form
 attaches without auto-parsing; direct fill carries the weight.
+
+### SESSION LOG — 2026-06-10 (late evening) — 2H.0.5b GH SELECT FILL SHIPPED (verified: 3896bc6 #11 on main)
+
+THE ARCHITECTURE FIND (research-driven, supersedes DOM-text matching):
+Greenhouse's public Job Board API serves the full application question
+schema per job — GET boards-api.greenhouse.io/v1/boards/{token}/jobs/
+{id}?questions=true, no auth, same API we already scrape. Canonical
+question labels, exact option labels, decline_to_answer flags on EEO
+options, field name === DOM element id. API = semantics, DOM = pure
+mechanics. The POST submit endpoint requires the EMPLOYER's key —
+confirms fill-in-browser/human-submits is the only path, and aligns
+with the bar anyway. Bonus noted: response metadata carries salary
+bands + pay-transparency ranges (future enrichment source).
+
+Shipped (PR #11): src/apply/gh-questions.ts (pure decision layer —
+label-pattern rules -> ApplyProfile keys, stored values -> exact
+option labels via canonical tables, EEO decline via API flag, no rule
+or no stored answer -> defer); src/server/services/apply/
+gh-job-questions.ts (fetch + Zod boundary parse, per-item safeParse,
+demographic ids become bare-numeric DOM ids); harness: trusted-input
+react-select execution (click -> type -> exact-match option click),
+education typeaheads, Phase-3 text fills (links).
+
+LIVE EVIDENCE (DoorDash GH form, multiple runs): resume uploaded, 7
+identity fields + LinkedIn filled, 9/9 answerable dropdowns selected
+from ApplyProfile with provenance, school + degree typeaheads filled,
+custom/consent questions deferred, zero guesses, never submits.
+
+NEW LOCKED DECISIONS:
+
+- **GH adapter reads the Job Board API for question semantics, never
+  DOM text.** Generalizes per-ATS, not per-company — one adapter
+  covers every Greenhouse company in the pool. Lever/Ashby adapters
+  (2H.2) should check for equivalent public schemas first.
+- **Exact-match option clicking only.** Substring matching is a
+  latent misfill ("Yes" inside "Yes, I have a disability"). Proven
+  live: the 1332 Hispanic/Latinx click failed under substring, passed
+  under getByRole exact.
+- **Education school typeahead: exact match or defer.** Refused
+  stored "Florida Atlantic univesrity" (typo) rather than fuzzy-pick —
+  protected the application from propagating the user's own typo.
+  Fix was data (corrected spelling on /apply-profile), not code.
+- **No inference between stored answers, reaffirmed twice live:**
+  transgender is NOT derivable from gender=male (separate question,
+  factually wrong for real people — defers; could become an explicit
+  ApplyProfile question if user wants); hispanic/latino is NOT
+  derivable from race=asian (ethnicity != race; the user HAD stored
+  the answer — the failure was click execution, not reasoning).
+- **previouslyEmployed auto-fills ONLY the clean negative** ("I have
+  not worked at X"); any stored yes or multi-flavor option set
+  (employee/contractor/dasher) defers to the human.
+- **Decision/execution split:** engine + gh-questions decide
+  (portable to 2H.1 extension verbatim); react-select needs trusted
+  events, so execution lives in the host (Playwright now, extension
+  content-script later).
+
+DRIFT CAUGHT BY SURYA: cat > into a nonexistent directory shipped as
+a runnable command (src/server/services/apply/ didn't exist) — same
+unlanded-write class as earlier in the day. Rule hardened: file
+creation commands include mkdir -p AND a landed-check (ls/grep) in
+the same chain.
+
+KNOWN ISSUES FILED (next session opens here):
+
+1. **PDF typo check — OPENER.** Stored school had "univesrity" typo,
+   likely inherited from master parsedJson via suggestion chip; may be
+   in tailored PDFs sent to employers. Verify the education line in a
+   rendered PDF; if present, fix the source resume file and re-upload
+   (re-parse + re-match) — never hand-edit parsedJson.
+2. Country dropdown defers despite User.country stored — small wire-up.
+3. Cosmetic: engine defer list prints before Phase-3 fills the same
+   fields — output ordering misleads.
+4. Standing items unchanged (email/domain, resolveSiteUrl stash, stale
+   matcher-v1 matches, test-user cleanup).
