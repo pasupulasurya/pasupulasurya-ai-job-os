@@ -1778,3 +1778,10 @@ CARRIED FORWARD (2H next steps):
 
 NOTE: squash subject on main reads "Feat/2h05 apply profile" (#10) —
 auto-title slipped through; contents are the two commits above.
+
+ADDENDUM (same evening): lab resume-upload VERIFIED — the harness
+Phase-1 filter patch had never landed (caught via grep, not memory);
+re-applied + annotation fix, rerun confirmed "Resume uploaded" with
+the tailored PDF attached on the GH form. 2H.0 loop fully
+evidence-backed. Note: skipped-prefilled stayed 0 — this GH form
+attaches without auto-parsing; direct fill carries the weight.
