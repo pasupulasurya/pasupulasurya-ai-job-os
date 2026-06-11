@@ -4,7 +4,15 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { House, Briefcase, Archive, Settings as SettingsIcon, Menu, X } from "lucide-react";
+import {
+  House,
+  Briefcase,
+  Archive,
+  ClipboardList,
+  Settings as SettingsIcon,
+  Menu,
+  X,
+} from "lucide-react";
 import { UserMenu } from "./user-menu";
 import { spring } from "@/styles/tokens";
 
@@ -26,6 +34,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: House },
   { label: "Applications", href: "/applications", icon: Briefcase },
   { label: "Dismissed", href: "/dismissed", icon: Archive },
+  { label: "Apply Profile", href: "/apply-profile", icon: ClipboardList },
   { label: "Settings", href: "/settings", icon: SettingsIcon },
 ];
 
