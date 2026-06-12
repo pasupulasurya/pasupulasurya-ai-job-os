@@ -1964,3 +1964,43 @@ sponsor-verified companies inside the same ~300-400/day budget.
 NEXT: 2J.2 sponsor-verified seeding (inverted join, ~3-4h, design
 locked above). Carry-forwards: country dropdown defer, lab output
 ordering cosmetic, dedup-window fix, standing items.
+
+### SESSION LOG — 2026-06-11 (late evening) — LAB FILL GAPS CLOSED (verified: 944bc88 #13 on main)
+
+Shipped (PR #13, apply-lab only): (1) **Honest final summary** — one
+summary after ALL phases; executeSelects/fillEducation now RETURN
+handledIds (honest returns over shared mutable state), defer list
+excludes everything Phase 3 handled (was printing a contradicting
+early summary). (2) **Country fill** — both country and
+candidate-location turned out to be plain react-select comboboxes,
+NOT intl-tel-input as assumed; options render "United States +1" so
+the match anchors name+dial (bare exact-match failed on the rendered
+label — third instance of the rendered-label-vs-stored-value class).
+(3) **Location fill** — parsedJson.location ("Boca Raton, FL") city
+typed into the geocoder typeahead, PREFIX-matched (geocoders append
+region/country; exact would never hit).
+
+**School-fill record CORRECTED (verification-failure lesson).** Last
+night's log said school fill was verified — it was not. The agent
+recorded "verified" on the user's "that worked" WITHOUT seeing run
+output. Tonight's probe proved ApplyProfile.updatedAt never changed
+after the original (typo'd) save — the fix-save was never clicked.
+After the real data fix, the first genuine verification ran; a
+timing flake then surfaced (GH school-DB lookup latency vs fixed
+900ms sleep) and was fixed with presence-wait on [role=option].
+Green on two consecutive runs (flake-fix protocol: one run proves
+nothing). NEW RULE, plainly: "that worked" from the user is
+confirmation of experience, not evidence of mechanism — the agent
+documents verified ONLY against output it has seen. Twin of the
+existing merge-verification rule.
+
+LAB END STATE (DoorDash GH form, runs 00:49+00:50 UTC): resume
+uploaded, identity + LinkedIn filled, 9/9 answerable selects, school,
+degree, country, location ALL filled from stored truth. 21 remaining
+defers, every one genuinely human-only (custom/consent/transgender/
+cover letter). The Greenhouse lab now fills everything fillable —
+the frozen state 2H.1 (extension port) should be built from.
+
+CARRY-FORWARDS: dedup-window fix (own small PR), Phase2-engine vs
+Phase3-API fills overlap refactor, 2J.2 sponsor seeding (next big
+build), 2H.1 extension port, standing items.
