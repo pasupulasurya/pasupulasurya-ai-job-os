@@ -3,6 +3,7 @@ import { logger } from "@/server/lib/logger";
 import { hasUSLocation } from "@/server/services/scrapers/location";
 import { jobHash } from "@/server/services/scrapers/hash";
 import { applyRules, type OwnerRule, type RuleableJob } from "@/server/services/scrapers/rules";
+import { matchesCohortTitles, isTitleFilterEnabled } from "@/server/services/scrapers/title-filter";
 import {
   parseAshbyJobsArray,
   parseAshbyJob,
@@ -21,6 +22,7 @@ export interface ScrapeOutcome {
   skippedDedup: number;
   skippedRules: number;
   skippedLocation: number;
+  skippedTitleFilter: number;
   skippedUnlisted: number;
   skippedMalformed: number;
   errors: number;
@@ -108,6 +110,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     skippedDedup: 0,
     skippedRules: 0,
     skippedLocation: 0,
+    skippedTitleFilter: 0,
     skippedUnlisted: 0,
     skippedMalformed: 0,
     errors: 0,
@@ -167,6 +170,13 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     // 2. Description: prefer plain, fall back to stripped HTML
     const descriptionText =
       (j.descriptionPlain ?? "").trim() || stripHtml(j.descriptionHtml ?? undefined).trim();
+
+    // 2.5 Cohort title pre-filter (2J.1) — before location parsing.
+    if (isTitleFilterEnabled() && !matchesCohortTitles(titleText)) {
+      outcome.skippedTitleFilter += 1;
+      logger.debug({ slug: company.slug, title: titleText }, "scrape.title_filter.dropped");
+      continue;
+    }
 
     // 3. US location filter
     if (!hasUSLocation(locationText)) {
@@ -277,6 +287,7 @@ export async function scrapeAshby(onlySlugs?: string[]): Promise<ScrapeOutcome[]
         skippedDedup: 0,
         skippedRules: 0,
         skippedLocation: 0,
+        skippedTitleFilter: 0,
         skippedUnlisted: 0,
         skippedMalformed: 0,
         errors: 1,
@@ -291,6 +302,7 @@ export async function scrapeAshby(onlySlugs?: string[]): Promise<ScrapeOutcome[]
       acc.skippedDedup += r.skippedDedup;
       acc.skippedRules += r.skippedRules;
       acc.skippedLocation += r.skippedLocation;
+      acc.skippedTitleFilter += r.skippedTitleFilter;
       acc.skippedUnlisted += r.skippedUnlisted;
       acc.skippedMalformed += r.skippedMalformed;
       acc.errors += r.errors;
@@ -302,6 +314,7 @@ export async function scrapeAshby(onlySlugs?: string[]): Promise<ScrapeOutcome[]
       skippedDedup: 0,
       skippedRules: 0,
       skippedLocation: 0,
+      skippedTitleFilter: 0,
       skippedUnlisted: 0,
       skippedMalformed: 0,
       errors: 0,

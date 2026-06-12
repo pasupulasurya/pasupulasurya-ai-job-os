@@ -3,6 +3,7 @@ import { logger } from "@/server/lib/logger";
 import { hasUSLocation } from "@/server/services/scrapers/location";
 import { jobHash } from "@/server/services/scrapers/hash";
 import { applyRules, type OwnerRule, type RuleableJob } from "@/server/services/scrapers/rules";
+import { matchesCohortTitles, isTitleFilterEnabled } from "@/server/services/scrapers/title-filter";
 import {
   parseGreenhouseJobsArray,
   parseGreenhouseJob,
@@ -21,6 +22,7 @@ export interface ScrapeOutcome {
   skippedDedup: number;
   skippedRules: number;
   skippedLocation: number;
+  skippedTitleFilter: number;
   skippedMalformed: number;
   errors: number;
 }
@@ -108,6 +110,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     skippedDedup: 0,
     skippedRules: 0,
     skippedLocation: 0,
+    skippedTitleFilter: 0,
     skippedMalformed: 0,
     errors: 0,
   };
@@ -164,6 +167,13 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     const titleText = j.title.replace(/\u0000/g, "");
     const descriptionText = stripHtml(j.content);
     const postedAt = j.updated_at ? new Date(j.updated_at) : null;
+
+    // 0. Cohort title pre-filter (2J.1) — cheapest check first.
+    if (isTitleFilterEnabled() && !matchesCohortTitles(titleText)) {
+      outcome.skippedTitleFilter += 1;
+      logger.debug({ slug: company.slug, title: titleText }, "scrape.title_filter.dropped");
+      continue;
+    }
 
     // 1. US-only filter
     if (!hasUSLocation(locationText)) {
@@ -276,6 +286,7 @@ export async function scrapeGreenhouse(onlySlugs?: string[]): Promise<ScrapeOutc
         skippedDedup: 0,
         skippedRules: 0,
         skippedLocation: 0,
+        skippedTitleFilter: 0,
         skippedMalformed: 0,
         errors: 1,
       });
@@ -289,6 +300,7 @@ export async function scrapeGreenhouse(onlySlugs?: string[]): Promise<ScrapeOutc
       acc.skippedDedup += r.skippedDedup;
       acc.skippedRules += r.skippedRules;
       acc.skippedLocation += r.skippedLocation;
+      acc.skippedTitleFilter += r.skippedTitleFilter;
       acc.skippedMalformed += r.skippedMalformed;
       acc.errors += r.errors;
       return acc;
@@ -299,6 +311,7 @@ export async function scrapeGreenhouse(onlySlugs?: string[]): Promise<ScrapeOutc
       skippedDedup: 0,
       skippedRules: 0,
       skippedLocation: 0,
+      skippedTitleFilter: 0,
       skippedMalformed: 0,
       errors: 0,
     },
