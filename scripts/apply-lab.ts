@@ -23,7 +23,14 @@ async function loadTarget(matchId: string) {
     where: { matchId },
     include: {
       user: {
-        select: { firstName: true, lastName: true, email: true, phone: true, applyProfile: true },
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          country: true,
+          applyProfile: true,
+        },
       },
       master: { select: { parsedJson: true } },
       job: {
@@ -160,13 +167,8 @@ async function main() {
     return { fieldCount: fields.length, ...result };
   }, profile);
 
-  console.log("\n── Fill summary ──");
-  console.log(`Fields detected: ${summary.fieldCount}`);
-  console.log(`Filled by engine: ${summary.filled}`);
-  console.log(`Skipped (portal prefilled): ${summary.skippedPrefilled}`);
-  console.log(`Deferred to you (amber outline): ${summary.deferred.length}`);
-  for (const d of summary.deferred) console.log(`  - [${d.label}] ${d.reason}`);
   // Phase 3: GH question semantics from the public API -> select fills.
+  const phase3Handled: string[] = [];
   if (row.job.source === "greenhouse" && row.job.companySlug && row.job.externalId) {
     const ap = row.user.applyProfile;
     const ghProfile: GHAnswerProfile = {
@@ -197,18 +199,41 @@ async function main() {
         const input = page.locator(`[id="${d.fieldName}"]`).first();
         await input.fill(d.value);
         console.log(`  filled [${d.fieldName}] (from ${d.sourceKey})`);
+        phase3Handled.push(d.fieldName);
       } catch {
         console.log(`  fill FAILED [${d.fieldName}] — left for you`);
       }
     }
     const sel = await executeSelects(page, decisions);
-    await fillEducation(page, {
-      schoolName: ap?.schoolName ?? null,
-      degreeLevel: ap?.degreeLevel ?? null,
-    });
+    phase3Handled.push(...sel.handledIds);
+    phase3Handled.push(
+      ...(await fillEducation(page, {
+        schoolName: ap?.schoolName ?? null,
+        degreeLevel: ap?.degreeLevel ?? null,
+      })),
+    );
+    const parsedLoc =
+      (row.master.parsedJson as { location?: string | null } | null)?.location ?? null;
+    phase3Handled.push(
+      ...(await fillCountryAndLocation(page, {
+        countryCode: row.user.country,
+        locationText: parsedLoc,
+      })),
+    );
     console.log(`Selected: ${sel.selected}`);
     for (const f of sel.failed) console.log(`  FAILED ${f}`);
   }
+
+  // ── Final summary (after ALL phases, so the defer list is honest) ──
+  const handledIds = new Set<string>();
+  for (const id of phase3Handled) handledIds.add(id);
+  const stillDeferred = summary.deferred.filter((d: { label: string }) => !handledIds.has(d.label));
+  console.log("\n── Final summary ──");
+  console.log(`Fields detected: ${summary.fieldCount}`);
+  console.log(`Filled by engine: ${summary.filled}`);
+  console.log(`Skipped (portal prefilled): ${summary.skippedPrefilled}`);
+  console.log(`Still deferred to you (amber outline): ${stillDeferred.length}`);
+  for (const d of stillDeferred) console.log(`  - [${d.label}] ${d.reason}`);
 
   console.log("\nReview the form. This script NEVER submits. Ctrl+C when done.");
   await new Promise(() => undefined); // pause forever
@@ -228,9 +253,10 @@ main()
 async function executeSelects(
   page: import("playwright").Page,
   decisions: ReturnType<typeof decideAnswers>,
-): Promise<{ selected: number; failed: string[] }> {
+): Promise<{ selected: number; failed: string[]; handledIds: string[] }> {
   let selected = 0;
   const failed: string[] = [];
+  const handledIds: string[] = [];
   for (const d of decisions) {
     if (d.kind !== "select") continue;
     try {
@@ -245,13 +271,14 @@ async function executeSelects(
       const option = page.getByRole("option", { name: d.optionLabel, exact: true }).first();
       await option.click({ timeout: 3000 });
       selected += 1;
+      handledIds.push(d.fieldName);
       console.log(`  selected [${d.fieldName}] = "${d.optionLabel}" (from ${d.sourceKey})`);
     } catch {
       failed.push(`${d.fieldName}: "${d.optionLabel}" — option click failed, left for you`);
     }
     await page.waitForTimeout(300);
   }
-  return { selected, failed };
+  return { selected, failed, handledIds };
 }
 
 const DEGREE_LABEL: Record<string, string> = {
@@ -269,7 +296,8 @@ const DEGREE_LABEL: Record<string, string> = {
 async function fillEducation(
   page: import("playwright").Page,
   ap: { schoolName: string | null; degreeLevel: string | null },
-): Promise<void> {
+): Promise<string[]> {
+  const handledIds: string[] = [];
   const targets: { id: string; text: string | null; exactOnly: boolean }[] = [
     { id: "school--0", text: ap.schoolName, exactOnly: true },
     {
@@ -293,9 +321,56 @@ async function fillEducation(
         : page.getByRole("option", { name: t.text }).first();
       await option.click({ timeout: 3000 });
       console.log(`  education [${t.id}] = "${t.text}"`);
+      handledIds.push(t.id);
     } catch {
       console.log(`  education [${t.id}]: no exact match for "${t.text}" — left for you`);
     }
     await page.waitForTimeout(300);
   }
+  return handledIds;
+}
+
+/** Fill the country + candidate-location react-select comboboxes.
+ *  Country: exact-match "United States" when User.country === "US".
+ *  Location: type parsedJson location; click only an option that
+ *  STARTS WITH the typed city (geocoders append region/country). */
+async function fillCountryAndLocation(
+  page: import("playwright").Page,
+  input: { countryCode: string | null; locationText: string | null },
+): Promise<string[]> {
+  const handledIds: string[] = [];
+  if (input.countryCode === "US") {
+    try {
+      const combo = page.locator("#country");
+      await combo.click();
+      await combo.fill("United States");
+      await page.waitForTimeout(600);
+      // Options render as "United States +1" — anchor name + dial code
+      // so "United States Minor Outlying Islands" cannot match.
+      await page
+        .getByRole("option", { name: /^United States\s*\+1/ })
+        .first()
+        .click({ timeout: 3000 });
+      handledIds.push("country");
+      console.log('  filled [country] = "United States"');
+    } catch {
+      console.log("  country: option click failed — left for you");
+    }
+  }
+  if (input.locationText) {
+    const city = input.locationText.split(",")[0].trim();
+    try {
+      const combo = page.locator("#candidate-location");
+      await combo.click();
+      await combo.fill(city);
+      await page.waitForTimeout(1200); // geocoder debounce
+      const option = page.getByRole("option", { name: new RegExp(`^${city}\\b`, "i") }).first();
+      await option.click({ timeout: 3000 });
+      handledIds.push("candidate-location");
+      console.log(`  filled [candidate-location] starting "${city}"`);
+    } catch {
+      console.log(`  location: no option starting "${city}" — left for you`);
+    }
+  }
+  return handledIds;
 }
