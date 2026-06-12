@@ -22,8 +22,8 @@ export function Hero() {
         </h1>
 
         <p className="text-text-secondary mt-6 max-w-xl text-base leading-relaxed sm:text-lg">
-          We watch the companies that sponsor visas, read every posting with AI, and score each one
-          against you — so you apply to the right roles, not all of them.
+          We watch 100+ companies verified against federal H-1B records, read every posting with AI,
+          and score each one against you — so you apply to the right roles, not all of them.
         </p>
 
         {/* Live product-loop demo */}

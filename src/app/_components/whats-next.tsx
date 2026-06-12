@@ -9,18 +9,27 @@ const ITEMS = [
     icon: FileText,
     name: "Resume tailoring",
     copy: "Generate a tailored resume for any match — re-emphasizing your real experience, never inventing it.",
+    status: "live" as const,
   },
   {
     icon: Wand2,
     name: "Application auto-fill",
-    copy: "Let the assistant fill applications for you. You review and submit, always.",
+    copy: "The assistant fills applications from your stored answers — and never guesses. You review and submit, always.",
+    status: "building" as const,
   },
   {
     icon: Inbox,
     name: "Email intelligence",
     copy: "Track every application's status straight from your inbox.",
+    status: "soon" as const,
   },
 ];
+
+const BADGE = {
+  live: { label: "Live", cls: "border-accent/40 text-accent" },
+  building: { label: "In development", cls: "border-border text-text-secondary" },
+  soon: { label: "Coming soon", cls: "border-border text-text-tertiary" },
+};
 
 const container = {
   hidden: {},
@@ -37,8 +46,8 @@ export function WhatsNext() {
     <section className="relative w-full px-6 py-32">
       <div className="mx-auto max-w-5xl">
         <h2 className="text-text-primary mb-20 text-center text-4xl font-bold tracking-[-0.03em] sm:text-6xl">
-          What&apos;s next.{" "}
-          <span className="text-text-tertiary">The roadmap we&apos;re building toward.</span>
+          The platform.{" "}
+          <span className="text-text-tertiary">What&apos;s live, and what&apos;s next.</span>
         </h2>
 
         <motion.div
@@ -59,8 +68,10 @@ export function WhatsNext() {
               >
                 <div className="mb-5 flex items-center justify-between">
                   <Icon size={22} strokeWidth={1.5} className="text-text-tertiary" />
-                  <span className="border-border text-text-tertiary rounded-full border px-2.5 py-1 text-[10px] font-medium tracking-widest uppercase">
-                    Coming soon
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-[10px] font-medium tracking-widest uppercase ${BADGE[it.status].cls}`}
+                  >
+                    {BADGE[it.status].label}
                   </span>
                 </div>
                 <h3 className="text-text-primary mb-2 text-base font-medium">{it.name}</h3>
