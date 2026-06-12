@@ -24,7 +24,8 @@
     "match": "dotenv -e .env.local -- tsx scripts/match.ts",
     "reasons": "dotenv -e .env.local -- tsx scripts/reasons.ts",
     "seed:resume": "dotenv -e .env.local -- tsx scripts/seed-master-resume.ts",
-    "apply:lab": "dotenv -e .env.local -- tsx scripts/apply-lab.ts"
+    "apply:lab": "dotenv -e .env.local -- tsx scripts/apply-lab.ts",
+    "seed:sponsors": "dotenv -e .env.local -- tsx scripts/seed-sponsors.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
