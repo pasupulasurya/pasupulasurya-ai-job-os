@@ -2004,3 +2004,12 @@ the frozen state 2H.1 (extension port) should be built from.
 CARRY-FORWARDS: dedup-window fix (own small PR), Phase2-engine vs
 Phase3-API fills overlap refactor, 2J.2 sponsor seeding (next big
 build), 2H.1 extension port, standing items.
+
+### MERGE RECORD — 2026-06-11 — dedup sourceUrl fix (verified: 3392a85 #14 on main)
+
+One indexed OR query covers both dedup cases: exact sourceUrl any age
+(catches >14d jobs alive via matches — was ~200 handled-but-noisy
+constraint errors per cron on mature companies) OR hash within the
+14-day window (re-posted-at-new-URL case preserved). Evidence:
+doordashusa rescrape — 212 skippedDedup reconciles with prior 209+3,
+zero prisma:error spam confirmed, gates silent on both scrapers.
