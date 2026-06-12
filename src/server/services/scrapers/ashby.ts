@@ -200,8 +200,14 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
 
     // 5. Dedup hash check
     const hash = jobHash(company.slug, titleText, locationText);
+    // Two dedup cases in one indexed query: exact same posting URL
+    // (any age — catches >14d jobs alive via matches, which previously
+    // fell through to a handled-but-noisy insert constraint error every
+    // cron), OR same company|title|location re-posted within the window.
     const existing = await prisma.job.findFirst({
-      where: { hash, scrapedAt: { gte: dedupCutoff } },
+      where: {
+        OR: [{ sourceUrl: j.jobUrl }, { hash, scrapedAt: { gte: dedupCutoff } }],
+      },
       select: { id: true },
     });
     if (existing) {
