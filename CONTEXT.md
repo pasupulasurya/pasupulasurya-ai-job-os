@@ -2013,3 +2013,68 @@ constraint errors per cron on mature companies) OR hash within the
 14-day window (re-posted-at-new-URL case preserved). Evidence:
 doordashusa rescrape — 212 skippedDedup reconciles with prior 209+3,
 zero prisma:error spam confirmed, gates silent on both scrapers.
+
+### SESSION LOG — 2026-06-11 (continued, late) — 2J.2 SHIPPED: 30 → 101 COMPANIES (verified: c950a2a #15 on main)
+
+Full evening arc after the earlier 2J.1 + lab-gaps entries: dedup
+sourceUrl fix (#14, recorded above), item-3 fill-ownership refactor
+ATTEMPTED then deferred (the "harness-only" framing was wrong — doing
+it right requires identity rules in decideAnswers + GHAnswerProfile
+extension, ~1.5h of decision-layer work with zero user-visible
+change; correctly traded for 2J.2; natural home is the 2H.1
+extension port where fill orchestration gets rebuilt anyway), then
+2J.2 end-to-end in one session.
+
+**2J.2 pipeline (PR #15) — the inverted join, as designed, with two
+mid-build corrections:**
+
+- Sources: USCIS H-1B Employer Data Hub crosstab export (FY2025+26,
+  ~99k rows, UTF-16 tab-delimited despite .csv name, public domain)
+  - Feashliaa/job-board-aggregator token lists (MIT-confirmed,
+    8,180 GH + 2,985 Ashby slugs; junk tokens self-filter at live
+    verification). Licensing audited across all layers: clean.
+- Correction 1: top-N(2000) slice was ALPHABET-BIASED — score ties
+  in the tail resolved by CSV order, cutting mid-alphabet (caught
+  when stage-2 verified only A/D/J/M names and the top-5 giants
+  never reached it). Fixed: score threshold (>=5) instead of top-N.
+- Correction 2: token file is partial (nvidia/salesforce/snowflake
+  absent; stripe/robinhood present — curl-verified). Fixed: live
+  probe tier for employers >=50 approvals, slug-derived candidates
+  probed directly against both ATS APIs.
+- Stages: 10,925 eligible -> 1,141 hits (1,101 tokens + 40 probe)
+  -> 816 unambiguous (multi-claimant slugs killed; "alpha" matched
+  6 employers) -> 458 name-verified with activeJobs captured ->
+  budget cut at ~350/day projected (EST_DAILY_RATE 6%, declared
+  guess, cron calibrates) -> **83 seed + 375 backlog**.
+- Seeded: 71 created + 12 existing stamped knownToSponsor=true.
+  Roster includes Stripe, Block, Waymo, Airbnb, Coinbase, Pinterest,
+  Roblox, Robinhood, Twilio, Lyft, Okta, Samsung Semiconductor.
+- Live verification: waymo first-fill 278/417 inserted zero errors
+  (robotics gold for the cohort); zscaler 67/335 (title filter 38%
+  on a sales-heavy board); stripe 0 new (pre-existing, all dedup);
+  2 null-byte insert errors at the documented known-issue rate.
+
+**STRUCTURAL FINDING (documented, not a bug):** mega-sponsors
+(Amazon 2,497 approvals, NVIDIA, Cognizant, GM, Schwab) run
+Workday-class enterprise ATSes — structurally outside the GH/Ashby
+universe. The pool's identity is sponsor-verified startup-to-
+mid-market, which is where the cohort's realistic traction lives
+anyway. LinkedIn (1,128, biggest single sponsor on GH) failed name
+verification (regional board mismatch) — quarterly re-seed chases
+stragglers. data/2j2/backlog.json (375 verified companies) is the
+expansion roadmap when budget ceiling rises (Cerebras overflow
+lever).
+
+**NEXT-SESSION OPENER: rawJson size audit.** First cron contact
+with 71 new boards surges ~8-12k inserts before settling to
+~350/day steady state. Inside the ~33k-job DB envelope per the
+math, but closest approach yet to the 500MB cap — sample avg row
+size, decide rawJson truncation/drop for non-matched jobs BEFORE
+the surge compounds. Then: watch the first full cron (enrichment
+spreads the backlog over ~1-2 weeks at ~430/day by idempotency —
+matcher only sees enriched jobs, quality never degrades).
+
+Process note: new docs rule held (merge-records in PR descriptions;
+CONTEXT for session logs + locked decisions only). README refresh
+still filed (says "Beta in development", 30 companies — now stale
+by 71 companies and a production URL).
