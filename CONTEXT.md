@@ -1900,3 +1900,67 @@ filtering later (blows DB + TPD inside a week).
 **Also check in 2J.1:** rawJson is the heaviest column — sample avg
 row size; truncating/dropping rawJson for non-matched jobs could
 double DB headroom.
+
+### SESSION LOG — 2026-06-11 (evening) — 2J.1 TITLE PRE-FILTER SHIPPED (verified: 8e1a9cc #12 on main)
+
+Opener: **PDF typo check CLOSED** — master parsedJson education is
+clean ("Florida Atlantic University", correct). Yesterday's typo
+lived only in the ApplyProfile school field (hand-typed, already
+fixed). PDFs to employers were never affected. startYear nulls are
+the known 06-09 parse-degradation behavior, accepted.
+
+**2J.1 shipped (PR #12).** title-filter.ts pure function, EXCLUSION
+model: drops only clearly-non-engineering functions (sales,
+marketing, recruiting, support/helpdesk, legal, admin, content/
+social, payroll, drivers/delivery, retail, warehouse, clinical,
+food service, events). Everything else enters the pool. Mid-design
+cohort correction by Surya: friends span electronics, VM/infra,
+civil engineering, robotics — an inclusion list would always have a
+hole, so the model flipped from inclusion to exclusion (filters less
+aggressively, ~40-50% savings vs ~70%, but safe for a diverse
+cohort). Careful patterns: \bserver\b(?!less) keeps Serverless
+Engineer; "technical support" IS dropped. Runs as cheapest check
+(before location). Every drop logged scrape.title_filter.dropped.
+Kill switch TITLE_FILTER_ENABLED=false.
+
+LIVE EVIDENCE: doordashusa 93/449 dropped at title (21%, e.g.
+"Warehouse Shift Lead - Webster"); ashby 8-company run 357/1639
+(22%) — spot-checked drops all correct (Product Marketing Manager,
+Account Executive, Sales Lead, Social Media Manager, Privacy
+Counsel). Zero errors, all counters reconcile. Note: ashby checks
+location BEFORE title, so true filter rate against US jobs is higher
+than the headline 22%.
+
+NEW FINDING FILED (pre-existing, not from this branch): **dedup
+window misses old-but-alive jobs.** Hash dedup checks scrapedAt >=
+14 days; jobs older than that surviving via matches/applications
+re-attempt insert every cron and eat the handled sourceUrl
+constraint error (~200/run on mature companies like doordashusa).
+Harmless (the catch counts them as skippedDedup) but noisy in
+Prisma stderr and wasteful. Fix sketch: sourceUrl existence check
+alongside the hash-window query. Small own PR.
+
+2J DESIGN ADDITIONS (expansion levers beyond 2J.2, in
+value-per-effort order):
+
+- **Lever adapter** — third major ATS, new company universe;
+  ARCHITECTURE.md add-a-scraper recipe applies (~3-4h). Check for a
+  public question-schema API like Greenhouse's before building 2H
+  fill support.
+- **Cerebras enrichment overflow** — ~1M tokens/day mostly idle
+  outside tailoring; routing enrichment overflow there via the
+  existing provider abstraction roughly doubles the daily enrichment
+  ceiling, doubling the company budget again.
+- 2J.2 note: refresh the H-1B join QUARTERLY (USCIS updates
+  quarterly), re-probe tokens, seed deltas — keeps newly-funded
+  sponsor startups flowing in.
+- Surya raised "don't insert stale postings" (postedAt older than N
+  days = likely ghost jobs) — logged as a 2J.2 design question, not
+  decided.
+
+With 2J.1 live, the 2J.2 seeding target moves from ~100 to ~150-200
+sponsor-verified companies inside the same ~300-400/day budget.
+
+NEXT: 2J.2 sponsor-verified seeding (inverted join, ~3-4h, design
+locked above). Carry-forwards: country dropdown defer, lab output
+ordering cosmetic, dedup-window fix, standing items.
