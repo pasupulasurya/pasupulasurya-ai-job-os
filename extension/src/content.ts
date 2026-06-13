@@ -1,5 +1,7 @@
 // AI Job OS content script — greenhouse.io job pages only.
-// 2H.1: marker-gated payload fetch via the worker. Fills land in 2H.2.
+// Marker-gated: fetch payload via worker, execute fills. NEVER submits.
+import { executeFills, type Payload } from "./fill";
+
 const MARKER = "#aijos-apply=";
 
 function getMatchId(): string | null {
@@ -15,12 +17,7 @@ async function main(): Promise<void> {
   const reply = (await chrome.runtime.sendMessage({
     kind: "aijos.getPayload",
     matchId,
-  })) as
-    | {
-        ok: true;
-        payload: { identity: unknown; decisions: unknown[]; education: unknown; pdfUrl: string };
-      }
-    | { ok: false; status: number; error?: string };
+  })) as { ok: true; payload: Payload } | { ok: false; status: number; error?: string };
 
   if (!reply.ok) {
     console.log(
@@ -30,12 +27,14 @@ async function main(): Promise<void> {
     );
     return;
   }
-  console.log("[aijos] payload received:", {
-    identity: reply.payload.identity,
-    decisionCount: reply.payload.decisions.length,
-    education: reply.payload.education,
-    pdfUrl: reply.payload.pdfUrl,
+  console.log("[aijos] payload received, executing fills…");
+  const report = await executeFills(reply.payload);
+  console.log("[aijos] fill report:", {
+    filled: report.filled.length,
+    deferred: report.deferred.length,
+    failed: report.failed,
   });
+  console.log("[aijos] filled:", report.filled);
 }
 
 void main();
