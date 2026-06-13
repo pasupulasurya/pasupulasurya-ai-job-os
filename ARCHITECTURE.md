@@ -76,11 +76,17 @@ How the system thinks. Read this before contributing.
 │ │ ├── auth.ts # signup/signin/signout
 │ │ └── preferences.ts # save UserPreference
 │ └── services/ # Business logic, called by actions or scripts
-│ ├── scrapers/ # ATS-specific scrapers + shared pure functions
-│ └── ai/ # LLM provider abstraction + enrichment orchestrator
-│ ├── llm.ts # Provider interface + typed error hierarchy + factory
-│ ├── groq-provider.ts # Groq impl (retry, timeout, Retry-After, JSON mode)
-│ └── enrich.ts # Orchestrator: idempotency, per-job try/catch, writeback
+│ ├── scrapers/ # ATS scrapers + shared pure fns (greenhouse, ashby, location, hash, rules, title-filter)
+│ ├── ai/ # LLM abstraction + enrichment + resume parsing + tailoring + verification
+│ │ ├── llm.ts # Provider interface + typed error hierarchy + factory
+│ │ ├── groq-provider.ts # Groq impl (retry, throttle, token-budget headers)
+│ │ ├── cerebras-provider.ts # Cerebras impl (tailoring, gpt-oss-120b)
+│ │ ├── enrich.ts # Enrichment orchestrator (v4, context-aware blocklist)
+│ │ ├── parse-resume.ts # Resume parser (v3, code-side skill cleaning)
+│ │ ├── tailor.ts # Resume tailoring engine (2G)
+│ │ └── verify.ts # Two-layer tailoring verification (2G)
+│ ├── matcher/ # 6-dimension scoring + content-addressed match cache
+│ └── apply/ # Greenhouse Job Board API question schema fetch (2H)
 │
 ├── shared/ # Zod schemas shared between client and server
 ├── lib/ # Client-safe utilities (Tailwind merge, formatters, etc.)
@@ -93,11 +99,12 @@ scripts/ # CLI tools, run via tsx
 └── enrich.ts # AI enrichment runner
 prisma/
 ├── schema.prisma # Source of truth for ALL DB models
-├── seed.ts # 30 companies + 12 owner rules
+├── seed.ts # companies + owner rules (100+ after 2J.2 sponsor seeding)
 └── sql/ # Raw SQL we maintain by hand
 └── 0001_auth_signup_trigger.sql
 .github/workflows/
-└── daily-cron.yml # Scrape + enrich + cleanup at 04:00 PT
+├── daily-cron.yml # Daily scrape + cleanup, 11:00 UTC
+└── daily-enrich.yml # Daily enrich → match → reasons, 12:00 UTC
 docs/
 ├── adr/ # Architectural Decision Records
 ├── design/principles.md # Design DNA
@@ -274,25 +281,25 @@ See `docs/runbooks/cron.md`.
 
 ## 7. Things we explicitly do NOT do (and why)
 
-| Don't                                           | Why                                                                              |
-| ----------------------------------------------- | -------------------------------------------------------------------------------- |
-| Use `any` types                                 | Type safety is the whole point of TypeScript                                     |
-| Write `console.log` in production code          | Pino is structured, searchable, Sentry-routable                                  |
-| Fabricate resume content                        | Product principle from VISION                                                    |
-| Fabricate enrichment values to fill nulls       | Tri-state nullable booleans exist for a reason: model returns `null` when unsure |
-| Auto-submit applications without human review   | Product principle from VISION                                                    |
-| Reproduce copyrighted job descriptions verbatim | Legal + product principle                                                        |
-| Build a repository abstraction over Prisma      | Premature abstraction for solo dev                                               |
-| Hardcode the LLM provider                       | Provider interface + env var = swap in one file                                  |
-| Use Drizzle ORM                                 | Prisma 7 is mature enough; migrations are first-class                            |
-| Use Clerk for auth                              | Supabase already in stack; one fewer provider                                    |
-| Use MongoDB                                     | We need referential integrity (Job ↔ User ↔ Application ↔ Resume)                |
-| Build a custom auth flow                        | Supabase Auth + magic link is faster and more secure                             |
-| Self-host the Postgres                          | Supabase free tier covers beta                                                   |
-| Pay for AI inference during beta                | Groq free tier (`llama-3.3-70b-versatile`): 30 RPM / 6,000 TPM / 1,000 RPD       |
-| Animate UI with linear easing                   | Apple-grade means spring-based motion only                                       |
-| Use multiple accent colors                      | One accent: `#0A84FF`. Restraint is part of the bar                              |
-| Use emojis in production UI                     | We are precise, not cute                                                         |
+| Don't                                           | Why                                                                                                                                                      |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Use `any` types                                 | Type safety is the whole point of TypeScript                                                                                                             |
+| Write `console.log` in production code          | Pino is structured, searchable, Sentry-routable                                                                                                          |
+| Fabricate resume content                        | Product principle from VISION                                                                                                                            |
+| Fabricate enrichment values to fill nulls       | Tri-state nullable booleans exist for a reason: model returns `null` when unsure                                                                         |
+| Auto-submit applications without human review   | Product principle from VISION                                                                                                                            |
+| Reproduce copyrighted job descriptions verbatim | Legal + product principle                                                                                                                                |
+| Build a repository abstraction over Prisma      | Premature abstraction for solo dev                                                                                                                       |
+| Hardcode the LLM provider                       | Provider interface + env var = swap in one file                                                                                                          |
+| Use Drizzle ORM                                 | Prisma 7 is mature enough; migrations are first-class                                                                                                    |
+| Use Clerk for auth                              | Supabase already in stack; one fewer provider                                                                                                            |
+| Use MongoDB                                     | We need referential integrity (Job ↔ User ↔ Application ↔ Resume)                                                                                        |
+| Build a custom auth flow                        | Supabase Auth + magic link is faster and more secure                                                                                                     |
+| Self-host the Postgres                          | Supabase free tier covers beta                                                                                                                           |
+| Pay for AI inference during beta                | Free tier only. Groq 8b-instant (enrichment) 500K TPD; Groq 70b (parsing/reasons) 100K TPD; Cerebras gpt-oss-120b (tailoring) 1M TPD — verified via curl |
+| Animate UI with linear easing                   | Apple-grade means spring-based motion only                                                                                                               |
+| Use multiple accent colors                      | One accent: `#0A84FF`. Restraint is part of the bar                                                                                                      |
+| Use emojis in production UI                     | We are precise, not cute                                                                                                                                 |
 
 ---
 

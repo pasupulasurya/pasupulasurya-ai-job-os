@@ -2,9 +2,9 @@
 
 An AI-powered job application platform built for international workers who need US visa sponsorship.
 
-The system continuously scrapes US companies, filters for sponsorship-friendly roles, enriches jobs with AI-extracted structured fields, scores matches per user, and (eventually) tailors resumes per application — without ever fabricating content.
+The system continuously scrapes US companies, filters for sponsorship-friendly roles, enriches jobs with AI-extracted structured fields, scores matches per user, tailors a resume per application without fabricating content, and fills the application form in the user's own browser for human review before submission.
 
-**Status:** Beta in development. Currently 1,581 real US jobs from ~30 companies in DB, with full first-time onboarding pipeline live, AI enrichment running autonomously on daily cron, and a per-user matcher that closes the iteration loop in real time (change keywords → matcher re-runs synchronously → dashboard updates).
+**Status:** Live beta at https://pasupulasurya-ai-job-os.vercel.app. 100+ sponsor-verified companies (seeded against federal H-1B records), daily autonomous cron, per-user matcher that closes the iteration loop in real time, resume tailoring with verification, and a Chrome extension that fills Greenhouse applications end-to-end. Built for a friend cohort first, public later.
 
 ---
 
@@ -12,7 +12,7 @@ The system continuously scrapes US companies, filters for sponsorship-friendly r
 
 LinkedIn Easy Apply has broken the job market. International candidates compete with thousands of applicants per role. Recruiters use AI to filter. The signal-to-noise ratio is zero.
 
-**This is an opinionated platform for the other side of that war.** Quality over quantity. AI as the candidate's ally. Human review before every submission. Built for the friend cohort first, public later.
+**This is an opinionated platform for the other side of that war.** Quality over quantity. AI as the candidate's ally. Human review before every submission — the system never auto-submits.
 
 For the full vision, see [`VISION.md`](./VISION.md).
 
@@ -20,34 +20,35 @@ For the full vision, see [`VISION.md`](./VISION.md).
 
 ## What's built
 
-| Layer                                                                     | Status         |
-| ------------------------------------------------------------------------- | -------------- |
-| Authentication (email + magic link, Supabase)                             | ✅             |
-| User preferences (keywords, locations, experience, sponsorship)           | ✅             |
-| Greenhouse scraper (16 companies)                                         | ✅             |
-| Ashby scraper (8 companies)                                               | ✅             |
-| US-only filter + owner rule engine                                        | ✅             |
-| 14-day dedup + 30-day TTL                                                 | ✅             |
-| Daily cleanup script (user-driven garbage collection)                     | ✅             |
-| GitHub Actions cron (daily 04:00 PT, autonomous)                          | ✅             |
-| Per-job parsing (resilient to schema variations)                          | ✅             |
-| AI enrichment (Groq-powered, provider-agnostic interface)                 | ✅             |
-| Per-user matcher + dashboard (content-addressed cache)                    | ✅             |
-| First-time onboarding pipeline (welcome → profile → resume → preferences) | ✅             |
-| Country picker + DOCX upload + strict routing guards                      | ✅             |
-| Synchronous matcher re-run on save (real-time iteration loop)             | ✅             |
-| Resume tailoring (Phase 2G — full spec in CONTEXT.md)                     | 🔜             |
-| Application auto-fill                                                     | 🔜 (post-beta) |
+| Layer                                                               | Status  |
+| ------------------------------------------------------------------- | ------- |
+| Authentication (email + magic link, Supabase)                       | Live    |
+| User preferences (keywords, locations, experience, sponsorship)     | Live    |
+| Greenhouse + Ashby scrapers                                         | Live    |
+| Title pre-filter (exclusion model) + US-only + owner rule engine    | Live    |
+| 14-day dedup + 30-day TTL + user-driven cleanup                     | Live    |
+| GitHub Actions cron (autonomous, daily)                             | Live    |
+| AI enrichment (Groq, provider-agnostic interface)                   | Live    |
+| Per-user matcher + dashboard (content-addressed cache)              | Live    |
+| Full onboarding pipeline (welcome → profile → resume → preferences) | Live    |
+| Country picker + DOCX upload + strict routing guards                | Live    |
+| Synchronous matcher re-run on save (real-time iteration loop)       | Live    |
+| Sponsor-verified company seeding (USCIS H-1B inverted join)         | Live    |
+| Resume tailoring with two-layer verification + ATS-safe PDF         | Live    |
+| Dashboard: full matched set + server-side filters + pagination      | Live    |
+| Chrome extension: fills Greenhouse applications (never submits)     | Live    |
+| Lever + Ashby apply adapters                                        | Planned |
+| LLM custom-question answers + Gmail outcome tracking                | Planned |
 
 ---
 
 ## Stack
 
-**Frontend:** Next.js 16 (App Router) · TypeScript 5 · Tailwind v4 · shadcn/ui · Framer Motion
-**Backend:** Node.js 22 · Prisma 7 · Supabase Postgres · Supabase Auth · Zod · Pino · unpdf (PDF extraction) · mammoth (DOCX extraction)
+**Frontend:** Next.js 16.2 (App Router, Turbopack) · TypeScript 5 · Tailwind v4 · Framer Motion 12 · Lucide icons
+**Backend:** Node.js 22 · Prisma 7.8 · Supabase Postgres · Supabase Auth (`@supabase/ssr`) · Zod 4 · Pino · unpdf (PDF text) · mammoth (DOCX text) · @react-pdf/renderer (ATS-safe PDF output)
 **Observability:** Sentry · PostHog
-**AI:** Groq free tier across two models — `llama-3.1-8b-instant` for high-volume job enrichment (500k TPD), `llama-3.3-70b-versatile` for resume parsing + match reasons (100k TPD). Cerebras planned as second free-tier provider for resume tailoring (Phase 2G). Provider-agnostic interface so swaps are one file. **Free-tier-only is a locked decision — paying a penny is the defeat condition.**
-**Hosting:** Vercel (after Phase 2E) · GitHub Actions for cron
+**AI (free tier only):** Groq across two models — `llama-3.1-8b-instant` for high-volume job enrichment (500k TPD), `llama-3.3-70b-versatile` for resume parsing + match reasons (100k TPD). Cerebras `gpt-oss-120b` for resume tailoring (1M TPD). Provider-agnostic interface so swaps are one file. **Free-tier-only is a locked decision — paying a penny for inference is the defeat condition.**
+**Hosting:** Vercel (Hobby tier, auto-deploys main) · GitHub Actions for cron
 
 All beta-tier free. Estimated $0/month through public launch.
 
@@ -55,17 +56,17 @@ All beta-tier free. Estimated $0/month through public launch.
 
 ## Project documents
 
-| File                                                             | Read when                                       |
-| ---------------------------------------------------------------- | ----------------------------------------------- |
-| [`README.md`](./README.md)                                       | First time landing here                         |
-| [`VISION.md`](./VISION.md)                                       | Understanding what we're building and why       |
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md)                           | Understanding how the system thinks             |
-| [`CONTEXT.md`](./CONTEXT.md)                                     | Paste into Claude at the start of every session |
-| [`COLLABORATION.md`](./COLLABORATION.md)                         | How we work with Claude (chunk sizes, rhythm)   |
-| [`AI_JOB_OS_SESSION_JOURNAL.md`](./AI_JOB_OS_SESSION_JOURNAL.md) | The build story (for sharing, learning)         |
-| [`docs/adr/*.md`](./docs/adr/)                                   | Why we picked specific tools/patterns           |
-| [`docs/design/principles.md`](./docs/design/principles.md)       | Design language reference                       |
-| [`docs/runbooks/cron.md`](./docs/runbooks/cron.md)               | How to debug the daily cron                     |
+| File                                                             | Read when                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| [`README.md`](./README.md)                                       | First time landing here                                                    |
+| [`VISION.md`](./VISION.md)                                       | Understanding what we're building and why                                  |
+| [`ARCHITECTURE.md`](./ARCHITECTURE.md)                           | Understanding how the system thinks                                        |
+| [`CONTEXT.md`](./CONTEXT.md)                                     | Current state + decisions; paste into Claude at the start of every session |
+| [`COLLABORATION.md`](./COLLABORATION.md)                         | How we work with Claude (chunk sizes, rhythm)                              |
+| [`AI_JOB_OS_SESSION_JOURNAL.md`](./AI_JOB_OS_SESSION_JOURNAL.md) | The full dated build narrative                                             |
+| [`docs/adr/*.md`](./docs/adr/)                                   | Why we picked specific tools/patterns                                      |
+| [`docs/design/principles.md`](./docs/design/principles.md)       | Design language reference                                                  |
+| [`docs/runbooks/`](./docs/runbooks/)                             | How to operate + debug the cron and deploy                                 |
 
 ---
 
@@ -74,44 +75,28 @@ All beta-tier free. Estimated $0/month through public launch.
 You need Node 22, npm, and a Supabase account.
 
 ```bash
-# Clone
 git clone git@github.com:pasupulasurya/pasupulasurya-ai-job-os.git
 cd pasupulasurya-ai-job-os
-
-# Install
 npm install
-
-# Copy environment template
 cp .env.example .env.local
 # Fill in: DATABASE_URL, DIRECT_URL, NEXT_PUBLIC_SUPABASE_URL,
 #          NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
 #          SENTRY_DSN, NEXT_PUBLIC_SENTRY_DSN,
 #          NEXT_PUBLIC_POSTHOG_KEY, NEXT_PUBLIC_POSTHOG_HOST,
 #          NEXT_PUBLIC_SITE_URL,
-#          LLM_PROVIDER=groq, GROQ_API_KEY=gsk_...
-
-# Push schema to your Supabase
-npm run db:push
-
-# Seed companies and scraping rules
-npm run db:seed
-
-# Run scrapers (one-time fill)
-npm run scrape:gh
+#          LLM_PROVIDER=groq, GROQ_API_KEY=gsk_..., CEREBRAS_API_KEY=...
+npm run db:push      # push schema to your Supabase
+npm run db:seed      # companies + scraping rules
+npm run scrape:gh    # one-time fill
 npm run scrape:ashby
-
-# Run enrichment (dry-run first to verify)
-npm run enrich -- --limit=5 --dry-run
+npm run enrich -- --limit=5 --dry-run   # verify enrichment wiring
 npm run enrich -- --limit=20
-
-# Verify
-npm run cleanup -- --dry-run   # should show 0 eligible
-
-# Start dev server
 npm run dev
 ```
 
 Open http://localhost:3000.
+
+> **Schema changes use `npm run db:push` only — never `prisma migrate dev`** (it would offer a destructive reset against the existing drift). Pre-flight any DB-touching change with a NULL/integrity check.
 
 ---
 
@@ -125,7 +110,7 @@ npm run scrape:ashby                       # all Ashby companies
 
 # Enrichment (AI-fill seniority, skills, sponsorsVisa, etc.)
 npm run enrich                             # skip already-enriched (default)
-npm run enrich -- --force                  # re-enrich everything (use when prompt v2)
+npm run enrich -- --force                  # re-enrich everything (use on version bump)
 npm run enrich -- --limit=10               # cap at N jobs (testing)
 npm run enrich -- --dry-run                # call LLM, log result, no DB write
 
@@ -140,13 +125,12 @@ Output is a Pino-structured log plus a summary table. See [`docs/runbooks/cron.m
 
 ## Operational health
 
-**Cron:** runs at 04:00 PT daily. Pipeline: scrape Greenhouse → scrape Ashby → enrich new jobs → cleanup. Each step has `continue-on-error: true`.
+**Cron:** two GitHub Actions workflows — "Daily scrape + cleanup" at 11:00 UTC, "Daily enrich" (enrich → match → reasons) at 12:00 UTC. Each step has `continue-on-error: true`.
 **Logs:** Pino → Sentry on errors, PostHog for events.
-**DB:** Supabase Postgres, us-east-1 region, free tier (500 MB cap).
-**Daily storage growth:** ~30 new jobs/day at current scrape volume. Comfortable until ~Phase 3+.
-**Enrichment throughput:** ~120-150 jobs/day on Groq free tier. Enrichment uses `llama-3.1-8b-instant` (14,400 RPD / 30,000 TPM / 500,000 TPD — chosen over 70b for 5× higher daily token budget). Resume parsing + match reasons use `llama-3.3-70b-versatile` (100,000 TPD). Backfill of large pools spreads over multiple days via versioned idempotency.
+**DB:** Supabase Postgres, free tier (500 MB cap). Curated inflow (title pre-filter + 30-day TTL) keeps steady-state well under the cap.
+**Enrichment throughput:** Groq free tier. `llama-3.1-8b-instant` real limits (curl-verified): 30 RPM / 6,000 TPM / 500,000 TPD ≈ ~430 enrichments per cron run. Resume parsing + reasons use `llama-3.3-70b-versatile` (100,000 TPD). Backfill of large pools spreads over multiple days via versioned idempotency.
 
-To manually trigger the cron (from GitHub UI): **Actions → Daily scrape + cleanup → Run workflow**.
+To manually trigger: **Actions → Daily scrape + cleanup → Run workflow**.
 
 ---
 
@@ -155,12 +139,12 @@ To manually trigger the cron (from GitHub UI): **Actions → Daily scrape + clea
 This is a small repo built to a serious bar. Read it before contributing:
 
 **Frontend — cinematic, Apple-grade.** OLED black, Inter Display, spring motion, 8px grid, one accent color (`#0A84FF`).
-
 **Backend — Stripe-grade.** No `any` types. Every external input through Zod. Every async op has structured logging. No `console.log` in production code. Stays correct under partial failure.
+**Tone — calm and direct.** "Done," not "Yay! All done!" No emojis in UI.
+**Never fabricate.** Resume tailoring re-emphasizes truth, never invents it. The system never auto-submits an application.
+**Free tier only.** Paying a penny for inference is the defeat condition.
 
-**Tone — calm and direct.** "Done" not "Yay! All done!" No emojis in UI.
-
-The full bar lives in [`VISION.md`](./VISION.md). The design principles in [`docs/design/principles.md`](./docs/design/principles.md). The engineering principles in [`CONTEXT.md`](./CONTEXT.md). The working rhythm in [`COLLABORATION.md`](./COLLABORATION.md).
+The full bar lives in [`VISION.md`](./VISION.md), the engineering principles in [`CONTEXT.md`](./CONTEXT.md), the design language in [`docs/design/principles.md`](./docs/design/principles.md), and the working rhythm in [`COLLABORATION.md`](./COLLABORATION.md).
 
 ---
 
