@@ -1,7 +1,5 @@
-// AI Job OS content script — runs on greenhouse.io job pages.
-// 2H.1 shell: detect the apply marker, handshake with the worker.
-// Fill execution lands in 2H.2; this proves the plumbing.
-
+// AI Job OS content script — greenhouse.io job pages only.
+// 2H.1: marker-gated payload fetch via the worker. Fills land in 2H.2.
 const MARKER = "#aijos-apply=";
 
 function getMatchId(): string | null {
@@ -15,10 +13,30 @@ async function main(): Promise<void> {
 
   console.log("[aijos] apply marker detected, matchId:", matchId);
   const reply = (await chrome.runtime.sendMessage({
-    kind: "aijos.handshake",
+    kind: "aijos.getPayload",
     matchId,
-  })) as { ok: boolean; echo: string };
-  console.log("[aijos] worker handshake:", reply);
+  })) as
+    | {
+        ok: true;
+        payload: { identity: unknown; decisions: unknown[]; education: unknown; pdfUrl: string };
+      }
+    | { ok: false; status: number; error?: string };
+
+  if (!reply.ok) {
+    console.log(
+      `[aijos] payload fetch failed (status ${reply.status})` +
+        (reply.status === 401 ? " — log in to AI Job OS first" : ""),
+      reply,
+    );
+    return;
+  }
+  console.log("[aijos] payload received:", {
+    identity: reply.payload.identity,
+    decisionCount: reply.payload.decisions.length,
+    education: reply.payload.education,
+    pdfUrl: reply.payload.pdfUrl,
+  });
 }
 
 void main();
+export {};
