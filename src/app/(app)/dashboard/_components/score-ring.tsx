@@ -32,9 +32,8 @@ export function ScoreRing({ score, size = 48 }: ScoreRingProps) {
   useEffect(() => {
     if (reducedMotion) return;
     const controls = animate(progress, clamped, {
-      type: "spring",
-      stiffness: 120,
-      damping: 20,
+      duration: 1.2,
+      ease: "easeOut",
     });
     return () => controls.stop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
