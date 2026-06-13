@@ -131,8 +131,47 @@ async function selectByLabel(
   return true;
 }
 
+/** Find the resume file input and inject the tailored PDF via
+ *  DataTransfer. GH auto-parses the resume after — caller must wait. */
+async function injectResume(pdfUrl: string): Promise<boolean> {
+  const reply = (await chrome.runtime.sendMessage({ kind: "aijos.getPdf", pdfUrl })) as
+    | { ok: true; bytes: number[]; contentType: string }
+    | { ok: false; status: number; error?: string };
+  if (!reply.ok) {
+    console.log(`[aijos] pdf fetch failed (status ${reply.status})`);
+    return false;
+  }
+  const file = new File([new Uint8Array(reply.bytes)], "resume.pdf", { type: reply.contentType });
+  const inputs = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+  const resumeInput =
+    inputs.find((el) =>
+      /resume|résumé|\bcv\b/i.test(`${el.getAttribute("aria-label") ?? ""} ${el.name} ${el.id}`),
+    ) ?? inputs[0];
+  if (!resumeInput) {
+    console.log("[aijos] no resume file input found");
+    return false;
+  }
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  resumeInput.files = dt.files;
+  resumeInput.dispatchEvent(new Event("input", { bubbles: true }));
+  resumeInput.dispatchEvent(new Event("change", { bubbles: true }));
+  outline(resumeInput, ACCENT);
+  console.log(`[aijos] resume injected (${reply.bytes.length} bytes)`);
+  return true;
+}
+
 export async function executeFills(payload: Payload): Promise<FillReport> {
   const report: FillReport = { filled: [], deferred: [], failed: [] };
+
+  // Phase 0 — resume-upload-first (lab ordering). GH parses the PDF and
+  // auto-fills; our fills run AFTER, completing rather than racing it.
+  const uploaded = await injectResume(payload.pdfUrl);
+  if (uploaded) {
+    console.log("[aijos] waiting 8s for portal autofill…");
+    await sleep(8000);
+    report.filled.push("resume");
+  }
 
   // Phase A — identity basics by well-known GH ids (engine-equivalent
   // for the standard application fields).
