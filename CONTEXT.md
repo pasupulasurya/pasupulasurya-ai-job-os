@@ -2078,3 +2078,29 @@ Process note: new docs rule held (merge-records in PR descriptions;
 CONTEXT for session logs + locked decisions only). README refresh
 still filed (says "Beta in development", 30 companies — now stale
 by 71 companies and a production URL).
+
+### PHASE 2K DESIGN — DASHBOARD: ALL MATCHES + FILTER HEADER (locked 2026-06-12, two iterations, build not started)
+
+Finding: the top-10 cap is COSMETIC — matcher persists every job
+above MIN_SCORE_TO_PERSIST (match.ts), dashboard shows top 10
+(page.tsx:48 take:10). "Show all" = display change only, no matcher
+/threshold change. Match query select is currently thin
+(title/company/location/remote/sourceUrl) — widen for richer cards.
+
+Architecture decision: filters are SERVER-SIDE via URL search params
+-> Prisma where -> re-query. Scales as matches grow; matches app's
+existing URL-state pattern. Not client-side (won't degrade at scale).
+
+**Iteration 1 — lift cap + filter header.** Remove take:10; paginate
+(~25/page). Header filter bar, all URL-param driven: date posted
+(24h/3d/7d/30d/all), match score (min buckets), sponsorship
+(knownToSponsor), remote (remote/onsite/all), company (user's matched
+companies), location. Filtered count in the header.
+
+**Iteration 2 — richer cards + sort.** Widen match select: postedAt,
+seniority, salary if present, knownToSponsor, sponsorsVisa, score
+breakdown. Cards show posted-date ("3 days ago"), sponsorship badge,
+score+breakdown. Sort control (score/date). Apple-grade polish pass
+(frontend-design skill; OLED black, single accent #0A84FF, no emojis).
+
+Scope locked at TWO iterations — no scope creep beyond this.
