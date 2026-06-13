@@ -2104,3 +2104,67 @@ score+breakdown. Sort control (score/date). Apple-grade polish pass
 (frontend-design skill; OLED black, single accent #0A84FF, no emojis).
 
 Scope locked at TWO iterations — no scope creep beyond this.
+
+### SESSION LOG — 2026-06-12 — 2H.1 + 2H.2: THE APPLY EXTENSION, NOTHING TO END-TO-END (verified on main)
+
+Morning openers, both CLOSED: (1) **rawJson size audit** — 4,680
+jobs / 57MB total, ~12.5KB/row; rawJson 26MB (46%) ~ description
+20MB (35%); extrapolated to ~12k steady-state ceiling = ~150MB,
+30% of the 500MB cap with 3x headroom. NO diet needed — decided
+against premature surgery; rerun the audit anytime (probe-db-size.ts).
+(2) **Cron health** — 95/96 active companies scraped in 26h (the
+8-12k surge estimate was high; reality gentler). cohere was the 1
+straggler: it's a lever board (no lever adapter), deactivated with
+a reactivation note.
+
+**#16 landing honesty** — WhatsNext badged ALL three features
+"Coming soon" incl. live resume tailoring. Per-item tiers now: Live
+(accent) / In development / Coming soon. Hero gained the 2J.2 stat:
+"100+ companies verified against federal H-1B records." Never-
+fabricate applied to marketing.
+
+**THE BIG ARC — apply extension built from zero across four PRs:**
+
+- **#17 shell** — MV3 scaffold in extension/ (same repo, shares the
+  decision layer source). Content script wakes ONLY on the
+  #aijos-apply=<matchId> marker; unmarked pages stay asleep (both
+  states verified live). esbuild bundler; dist/ gitignored.
+- **#18 payload API + cookie auth** — GET /api/apply/[matchId]/
+  payload, session-gated, ownership-checked, composes the lab's
+  decision path (fetchGHQuestions + decideAnswers) + identity +
+  education + pdfUrl. Extension worker fetches with credentials:
+  include — cookie auth WORKS cross-origin (the SameSite risk did
+  not materialize). LESSON (again): route first used supabase auth
+  id directly as prisma userId; the app maps through User.authId —
+  read the existing pattern before writing. 404-then-fix proved it.
+- **#19 fills (15 fields)** — content-script execution ported from
+  the lab onto native DOM. THE KEY FINDING: react-select ignores
+  plain .click() in content-script context — opens on mousedown.
+  realClick() (mousedown/mouseup/click) unlocked every dropdown
+  (5 -> 14 filled). Typographic-apostrophe norm() matched degree's
+  rendered "Master's Degree" (U+2019).
+- **#20 resume PDF attach — FULL FLOW E2E** — Phase 0 resume-upload-
+  first (lab ordering): worker fetches tailored PDF from production
+  API (bytes as number[] over sendMessage for cross-version
+  reliability), content script reconstructs a File, injects via
+  DataTransfer into GH's resume input, waits 8s for GH autofill,
+  THEN fills. Verified live: resume attaches (real bytes) + 15
+  fields fill. The headline feature works: dashboard match ->
+  marked page -> authenticated PDF fetch -> injected resume ->
+  fills. NEVER submits (no submit code exists).
+
+ARCHITECTURE NOTE clarified this session: extension code is local
+(unpacked, reloaded per edit), but PDF + payload come from the
+DEPLOYED production API over authenticated fetch. Code = local
+edits; data = production. Standard extension split.
+
+**NEXT-CHUNK (precise, evidence-rich): school + degree menu
+isolation.** Both typeaheads DEFER safely today (never misfill —
+the bar holds) but fail to select because react-select menus don't
+close between fields; option-matching reads a stale still-open
+listbox (degree's failure logs the COUNTRY option list as visible —
+proof of the bleed). Fix: scope findOption to the active field's
+own menu, or force-close between fields. Then the overlay (filled/
+deferred count + the 401 "log in first" message). Then 2H.3 LLM
+custom-question answers (the blog-influence/PhD questions still
+defer). Standing: README refresh, lever adapter, Cerebras overflow.
