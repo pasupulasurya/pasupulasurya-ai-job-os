@@ -51,3 +51,4 @@ src/generated
 # 2H apply lab — persistent browser profile (portal sessions live here)
 .apply-lab-profile/
 scripts/probes/
+extension/dist/

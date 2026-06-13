@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "AI Job OS — Apply Assistant",
+  "version": "0.1.0",
+  "description": "Fills job applications from your AI Job OS profile. You review and submit, always.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://job-boards.greenhouse.io/*"],
+  "background": { "service_worker": "dist/background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://job-boards.greenhouse.io/*"],
+      "js": ["dist/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
