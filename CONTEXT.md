@@ -2168,3 +2168,89 @@ own menu, or force-close between fields. Then the overlay (filled/
 deferred count + the 401 "log in first" message). Then 2H.3 LLM
 custom-question answers (the blog-influence/PhD questions still
 defer). Standing: README refresh, lever adapter, Cerebras overflow.
+
+### SESSION LOG — 2026-06-12 — PHASE 2K.1 SHIPPED: DASHBOARD ALL-MATCHES + FILTERS + REDESIGN (verified: 07b04c8 #22 on main)
+
+Iteration 1 of the locked two-iteration 2K plan. Presentation +
+read-query only — matcher, LLM/tailoring, Server Actions untouched
+(confirmed by reading CONTEXT in full after a fear-halt; the dashboard
+is a READ surface over userJobMatch rows the matcher already wrote,
+editing page.tsx cannot reach matcher/enrichment/tailoring).
+
+**Functional (the all-matches + filters core):**
+
+- top-10 cap was COSMETIC (matcher persists every job >= MIN*SCORE_TO*
+  PERSIST=40; dashboard showed 10). Now shows the full matched set.
+- Server-side filtering: searchParams -> Zod validate -> Prisma where/
+  orderBy -> paginated 10/page. Filters: q (title/company), sort
+  (score/newest/company), minScore, postedWithin, remote, company.
+  All URL-driven (shareable/bookmarkable), matches the app's URL-state
+  pattern. Numbered pagination preserves active filters.
+- STRIPE-GRADE pieces: Zod on every searchParam with .catch() so
+  malformed URLs (?minScore=abc, ?page=-5) degrade to default, never
+  crash. postedAt-null jobs NEVER silently hidden by a date filter
+  (OR: [{postedAt gte cutoff}, {postedAt null}]) — honors the
+  matcher-freeze silent-exclusion lesson.
+- NO schema touch (chosen for lowest risk): the indexes the filters/
+  sort need already exist — UserJobMatch @@index([userId, matchScore]).
+  Confirmed by reading schema.prisma verbatim before deciding.
+
+**Redesign (Apple-grade, presentation only):**
+
+- 1080px container; reason text capped max-w-[68ch] (readable line
+  length — full-bleed text was the worst "unfinished" tell).
+- Solid header band (gradient + blur + shadow); filters in a raised
+  3D container (inset+drop shadows), recessed search input, pills that
+  light #0A84FF when active; search-icon/placeholder overlap fixed.
+- Cards lift -3px + blue bloom glow on hover (framer whileHover +
+  Tailwind hover:shadow — different properties, compose cleanly).
+- Animated icons: dismiss reddens (#FF453A) + tap-scale, eye brightens
+  - tap-scale, chevron rotates, "Applied"/"Viewed" badges fade in,
+    card animates out (slide+fade) on dismiss.
+- Score ring count-up slowed spring(120/20) -> duration 1.2s easeOut
+  (was finishing before the user could see it). "/" focuses search.
+
+**METHOD WIN — sandbox-render-first beat the recurring drifts.** All
+visual work was built in a /tmp sandbox, RENDERED with Playwright to
+real PNGs, iterated against screenshots (readable-width vs full-bleed,
+3D filter container, hover glow, animated icons), handed over only as
+corruption-safe commands after parse + lint verified. This is the
+disciplined answer to the live-iteration thrash earlier in the session.
+
+**Two bug classes caught BEFORE shipping:**
+
+- The "<a" token corruption (Addendum-2 trap) bit again on the first
+  card heredoc; fixed permanently with const ApplyTag = "a" +
+  <ApplyTag> so the literal token never sits in a heredoc. Every
+  hand-over greps bare-<a count (want 0) in the same chain as gates.
+- Invalid Tailwind opacity values (hover:bg-white/8, bg-[#FF453A]/14 —
+  /8 and /14 not in the default scale) would have silently rendered
+  NO background; caught in sandbox, fixed to arbitrary rgba() syntax.
+
+**Process notes / drifts:**
+
+- The redesign was invisible after shipping until `rm -rf .next` — a
+  prior `npm run build` left the dev server serving stale cached output
+  while the code on disk was correct (grep-verified). Lesson: after a
+  production build, clear .next before trusting `npm run dev`.
+- User halted a dashboard edit mid-build fearing it could damage the
+  sensitive matcher/LLM; resolved by full CONTEXT re-read confirming
+  the dashboard's read-only relationship to upstream. The TS error
+  walls were the compiler protecting, not damage — nothing ran vs DB.
+- Prisma 7 type-name wall (UserJobMatchWhereInput not generated):
+  resolved by matching the codebase's pattern — NO explicit Prisma
+  type annotations anywhere, pure inference + `as const` on sort
+  literals.
+- Stray duplicate extension merge: #21 (88f31e5) re-merged the same
+  2h.2 code already on main as #20. Harmless (identical, clean
+  fast-forward) but feat/2h2-pdf-attach branch should be deleted.
+  Dashboard correctly landed as #22.
+
+**NEXT — 2K.2 (Iteration 2, locked scope):** per-card metadata rail
+filling the card's right zone (postedAt "3 days ago", location,
+sponsorship badge, score breakdown) — requires widening the match
+query select. Plus score-ring color-grading by value, j/k card nav.
+Standing carry-forwards: README refresh (still "Beta in development"/
+30 companies — now 101 + live URL), Lever adapter, email/domain
+decision, resolveSiteUrl stash, 37 stale matcher-v1 matches,
+test-user cleanup, feat/2h2-pdf-attach branch delete.
