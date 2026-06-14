@@ -112,6 +112,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
             sourceUrl: true,
           },
         },
+        tailoredResume: { select: { status: true } },
       },
     }),
     prisma.userJobMatch.findMany({
@@ -191,6 +192,9 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                 reason: m.reason,
                 scoreBreakdown: m.scoreBreakdown,
                 job: m.job,
+                hasTailoredResume: ["generated", "verified", "saved"].includes(
+                  m.tailoredResume?.status ?? "",
+                ),
               }))}
             />
             {totalPages > 1 && (

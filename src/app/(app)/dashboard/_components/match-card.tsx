@@ -26,6 +26,7 @@ export type MatchCardProps = {
     remote: boolean;
     sourceUrl: string;
   };
+  hasTailoredResume: boolean;
 };
 
 type LocalState = "visible" | "dismissed";
@@ -68,6 +69,14 @@ export function MatchCard(props: MatchCardProps) {
     : (props.job.location ?? "");
 
   const ApplyTag = "a";
+
+  // Gate apply on a tailored resume existing. With one: fire the extension
+  // (marker on the job URL). Without one: route to the tailor page first —
+  // every application goes out tailored, never a generic master.
+  const applyHref = props.hasTailoredResume
+    ? `${props.job.sourceUrl}#aijos-apply=${props.matchId}`
+    : `/dashboard/tailor/${props.matchId}`;
+  const applyLabel = props.hasTailoredResume ? "Apply" : "Tailor & Apply";
 
   return (
     <AnimatePresence>
@@ -179,13 +188,13 @@ export function MatchCard(props: MatchCardProps) {
             </Link>
             <motion.div whileTap={{ scale: 0.97 }} className="ml-auto">
               <ApplyTag
-                href={props.job.sourceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={handleApply}
+                href={applyHref}
+                {...(props.hasTailoredResume
+                  ? { target: "_blank", rel: "noopener noreferrer", onClick: handleApply }
+                  : {})}
                 className="inline-flex h-11 min-w-[160px] items-center justify-center gap-2 rounded-xl bg-[#0A84FF] px-6 text-sm font-semibold text-white transition-colors hover:bg-[#0A84FF]/90"
               >
-                Apply <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
+                {applyLabel} <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
               </ApplyTag>
             </motion.div>
           </div>
