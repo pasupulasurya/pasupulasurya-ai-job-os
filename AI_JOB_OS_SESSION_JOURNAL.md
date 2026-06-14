@@ -1278,3 +1278,99 @@ Standing carry-forwards: README refresh (still "Beta in development"/
 30 companies — now 101 + live URL), Lever adapter, email/domain
 decision, resolveSiteUrl stash, 37 stale matcher-v1 matches,
 test-user cleanup, feat/2h2-pdf-attach branch delete.
+
+### SESSION LOG — 2026-06-13 — GATED APPLY BUTTON + EXTENSION MARKER WIRED (verified local; PROD UNVERIFIED)
+
+Goal: finish the apply flow so a click — not a hand-typed URL marker — fires
+the extension end to end. Found via reading the source first that the chain
+had a missing link: the match-card Apply button opened the bare job URL
+(href={props.job.sourceUrl}) with NO #aijos-apply marker, so nothing woke the
+extension from the UI. The fill ENGINE worked (verified earlier, #20) but was
+only ever triggered by manually typing the marker URL.
+
+**THE DESIGN DECISION — gate, not fallback (reversed mid-session against the bar).**
+Initial plan was master-resume FALLBACK (apply always works; untailored →
+render master PDF). Designed it fully (verified the bridge mapper: master
+parsedJson workHistory bullets are string[], map to {id,text,parentMasterBulletId:null};
+everything else matches ResumePdfData field-for-field; bullets are verbatim so
+locked-truth is preserved). Then re-checked against the bar at "imagine 10M
+users": fallback REBUILDS the spray-and-pray machine the product exists to
+replace, and spawns a "which resume did I apply with?" ambiguity that itself
+fails the never-fabricate bar. Drift #2 (convenient vs right). FLIPPED to GATE:
+apply requires a tailored resume; without one the button routes to tailor first.
+Gate is LESS code (no master mapper, no PDF-route branch, no payload type field,
+no signal problem), scales to 10M, and enforces the core value. Fallback build
+was discarded — the bar working as intended, caught before shipping.
+
+**Shipped (PR #23, d8ee690 on main):**
+
+- Dashboard query (page.tsx): added tailoredResume {select:{status}} to the
+  match include; mapped hasTailoredResume = ["generated","verified","saved"]
+  .includes(status) into MatchCardProps.
+- match-card.tsx: MatchCardProps gains hasTailoredResume:boolean. Button gates
+  via computed applyHref/applyLabel above the return:
+  - hasTailoredResume → href = `${sourceUrl}#aijos-apply=${matchId}`, label
+    "Apply", external nav + handleApply (fires the extension).
+  - else → href = `/dashboard/tailor/${matchId}`, label "Tailor & Apply",
+    internal nav, no handleApply (routes to tailor first).
+  - Used the ApplyTag="a" constant + conditional prop spread so no literal
+    anchor token sat in any patch (the clipboard-eats-anchor trap). Gates: bare-anchor 0,
+    tsc clean, eslint clean (conditional spread passed), build compiled.
+- All four edits delivered as guarded Node patch scripts (PATTERN-NOT-FOUND
+  aborts, no manual editing) — held the command-line-only rule after a drift
+  where the agent started to hand over JSX as "instructions" (user caught it).
+
+**VERIFIED:** full click-to-fill chain works through the button in LOCALHOST —
+tailored match → Apply → extension wakes → fetches PDF → attaches → fills 15
+fields → never submits. Untailored → "Tailor & Apply" routes to tailor page.
+
+**NOT VERIFIED — production end-to-end.** Tested localhost only. The
+local-extension → PRODUCTION-API cookie-auth fetch (credentials:include across
+origins), the production PDF bytes, CORS/SameSite — all still unconfirmed on the
+live Vercel site. APP_ORIGIN in the extension already points at production, so
+the test is possible post-deploy. THIS IS THE IMMEDIATE NEXT STEP, not a closed
+item. "Works in localhost" is necessary, not sufficient.
+
+**KNOWN ISSUE SURFACED THIS SESSION (the valuable catch): gated apply can
+STRAND users when tailoring can't complete on the free tier.** The gate assumes
+tailoring eventually succeeds. On Cerebras free tier (5 req/min, 1M tok/day),
+a rate-limited or failed tailor leaves status not-in-{generated,verified,saved}
+→ button stays "Tailor & Apply" → user has NO path to "Apply." At scale, many
+users would hit this wall. Not solved tonight. Options filed: (a) queue
+gracefully via the existing fire-and-poll arch, button flips when it completes;
+(b) fallback-to-master ONLY on genuine `failed` status (narrow, justified — not
+the convenience fallback we rejected, but a don't-strand escape hatch); (c) the
+already-planned per-user daily tailor cap manages the budget so users don't hit
+the wall unexpectedly. This is a pre-invite Tier-1-adjacent requirement.
+
+**Apply flow state confirmed earlier this session:** resume attaches (local
+only), only ONE field defers now (school/university — react-select menu
+isolation, the safe-defer behavior), stops and never submits. ApplyProfile
+handles recurring STANDARD fields (work auth, EEO, salary, etc.) via lookup —
+NOT learning. Learning custom answers (the SavedAnswer concept) is 2H.3,
+designed not built.
+
+**Carry-forwards (still open, from prior sessions):**
+
+- Tailoring ≈ master / ignores the JD — the CORE VALUE issue a real user
+  (friend, 10-min test) flagged. Highest-value diagnosis. Needs tailor.ts +
+  verify.ts read: is the JD reaching the prompt, or is verification clamping
+  output back to master via over-firing retry→fallback? Possibly the same root
+  cause as the slowness (retries = extra rate-limited calls).
+- Experience-gap scoring: 3-yr candidate scores ~50/100 on a 7-yr job — is it
+  correct-by-design (title+skills carry it, seniority only dents 15pts), a
+  scoring flaw, or bad enrichment data? Read score.ts before specifying a fix.
+- School/university field defers (react-select menu isolation).
+- Speed: tailoring slow — NOT the model (Cerebras ~2-3k tok/s is among the
+  fastest). It's the 5-req/min cap + reasoning overhead + possibly retry loops.
+  Fix = fewer/parallel calls + add Gemini Flash (15 req/min free) round-robin,
+  NOT a faster model. Frontier open weights (DeepSeek V4, GLM-5, Kimi K2.6)
+  need paid GPUs = breaks free-tier defeat condition; not an option.
+- Standing: email/domain gate, per-user tailor cap, README job-count is
+  qualitative, Lever adapter, 37 stale matcher-v1 matches, test-user cleanup,
+  feat/2h2-pdf-attach + feat/2h-gated-apply branch cleanup.
+
+**NEXT — in bar-order:** (1) verify the gate on PRODUCTION end-to-end. (2) the
+strand-on-free-tier-failure handling (don't ship the gate to users without it).
+(3) diagnose tailoring ≈ master (the core value). (4) then speed (Gemini
+round-robin) + enrichment ceiling.

@@ -260,6 +260,7 @@ Recurring questions: `salaryExpectation?, earliestStartDate?, willingToRelocate?
 - **previouslyEmployed auto-fills ONLY the clean negative;** any yes/multi-flavor option defers.
 - **Decision/execution split:** engine + gh-questions decide (portable to the extension verbatim); react-select needs trusted events so execution lives in the host. **react-select ignores plain .click() in content-script context — opens on mousedown; realClick() (mousedown/mouseup/click) is required.**
 - **Capacity (pre-invite guard REQUIRED):** tailoring ~10-15 req + ~25K tokens/application; tokens bind first → ~40 applications/day ≈ 8-10 daily-active friends. 5 req/min = one generation at a time globally. Per-user daily tailor limit needed before inviting. Overflow levers: Groq routing, per-job caching, multi-provider round-robin.
+- **Apply is GATED on a tailored resume, NOT master-fallback (locked 2026-06-13, #23).** Dashboard Apply button fires the extension (#aijos-apply marker) only when a tailored resume exists (status generated/verified/saved); else routes to the tailor page ("Tailor & Apply"). Chosen over master-fallback via the 10M-user bar test: fallback rebuilds the spray-and-pray machine the product exists to replace and spawns a "which resume?" ambiguity that fails never-fabricate. Gate is less code, scales, enforces tailored-per-job. Stated temporary intent to revisit, but the bar argument is that gate is the correct end state. KNOWN GAP this creates: see §9 — gated apply can strand users when tailoring can't complete on the free tier.
 
 ### 4E. Job-pool (2J) decisions
 
@@ -450,6 +451,8 @@ Pipeline: scrape, cleanup, enrich, match, reasons, parse-resume, seed-master-res
 9. **tokensUsed null on TailoredResume** — provider doesn't surface usage; needs an LLMProvider interface change (ripples to Groq). Measured manually via the harness for now.
 10. **5-minute Vercel function window** — fire-and-poll generation; pathologically slow runs could die at the edge → stale-lock recovery. Chunked poll-driven generation is the designed fallback.
 11. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic.
+12. **Gated apply can STRAND users when tailoring can't complete on the free tier (2026-06-13, #23).** The gate assumes tailoring eventually succeeds. On Cerebras free tier (5 req/min, 1M tok/day) a rate-limited or failed tailor leaves status not-ready → button stays "Tailor & Apply" → no path to "Apply." Pre-invite fix: queue gracefully (fire-and-poll, flip on completion), OR fallback-to-master ONLY on genuine `failed` status, OR the planned per-user daily tailor cap. NOT solved.
+13. **Production extension apply-flow UNVERIFIED (2026-06-13).** Gate + full click-to-fill chain verified in localhost only. The local-extension → production-API cookie-auth fetch (credentials:include cross-origin), production PDF bytes, CORS/SameSite — unconfirmed on the live site. APP_ORIGIN already points at production; test possible now that #23 is deployed. Immediate next step.
 
 ---
 
