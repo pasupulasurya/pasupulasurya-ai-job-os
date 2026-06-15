@@ -14,6 +14,8 @@ const GREENHOUSE_API = "https://boards-api.greenhouse.io/v1/boards";
 const DEDUP_WINDOW_DAYS = 14;
 const JOB_TTL_DAYS = 30;
 const USER_AGENT = "ai-job-os/0.1";
+const GH_LEGACY_HOST = "boards.greenhouse.io";
+const GH_CANONICAL_HOST = "job-boards.greenhouse.io";
 
 export interface ScrapeOutcome {
   company: string;
@@ -27,6 +29,21 @@ export interface ScrapeOutcome {
   errors: number;
 }
 
+/**
+ * Canonicalize a Greenhouse job URL to the job-boards host.
+ * Legacy boards.greenhouse.io 301-redirects to job-boards.greenhouse.io;
+ * storing the canonical host lets the apply extension fire on first load.
+ * Malformed URLs are returned untouched — never throw inside the scrape loop.
+ */
+function canonicalizeGreenhouseUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    if (u.host === GH_LEGACY_HOST) u.host = GH_CANONICAL_HOST;
+    return u.toString();
+  } catch {
+    return rawUrl;
+  }
+}
 /**
  * Recursively strip null bytes from any string in a JSON-like object.
  * Postgres TEXT/JSONB reject 0x00 bytes; this guarantees we never send them.
@@ -196,13 +213,14 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
 
     // 3. Dedup hash check
     const hash = jobHash(company.slug, titleText, locationText);
+    const sourceUrl = canonicalizeGreenhouseUrl(j.absolute_url);
     // Two dedup cases in one indexed query: exact same posting URL
     // (any age — catches >14d jobs alive via matches, which previously
     // fell through to a handled-but-noisy insert constraint error every
     // cron), OR same company|title|location re-posted within the window.
     const existing = await prisma.job.findFirst({
       where: {
-        OR: [{ sourceUrl: j.absolute_url }, { hash, scrapedAt: { gte: dedupCutoff } }],
+        OR: [{ sourceUrl }, { hash, scrapedAt: { gte: dedupCutoff } }],
       },
       select: { id: true },
     });
@@ -216,7 +234,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
       await prisma.job.create({
         data: {
           source: "greenhouse",
-          sourceUrl: j.absolute_url,
+          sourceUrl,
           externalId: String(j.id),
           title: titleText,
           company: company.name,
