@@ -119,7 +119,7 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
 
   const matchableUser: MatchableUser & { excludeKeywords: string[]; avoidCompanies: string[] } = {
     keywords: user.preferences.keywords,
-    locations: user.preferences.locations,
+    targetRoles: user.preferences.targetRoles,
     visaSponsorship: user.preferences.visaSponsorship,
     totalYearsExperience: parsed.totalYearsExperience,
     resumeSkills: parsed.skills,
@@ -165,6 +165,14 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
     ...(limit ? { take: limit } : {}),
   });
 
+  // Company sponsorship prior: per-job sponsorsVisa is null on ~99.9% of jobs,
+  // so the scorer falls back to the company's knownToSponsor (USCIS-verified).
+  // Pre-load once as a slug->prior map (mirrors blockedCompanyNames pattern).
+  const sponsorRows = await prisma.company.findMany({
+    select: { slug: true, knownToSponsor: true },
+  });
+  const sponsorMap = new Map(sponsorRows.map((c) => [c.slug, c.knownToSponsor]));
+
   logger.info(
     { userId, jobsCount: jobs.length, force, dryRun, version: matchVersion },
     "matcher.run.start",
@@ -209,12 +217,11 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
 
       const matchableJob: MatchableJob & { company: string; description: string | null } = {
         title: job.title,
-        location: job.location,
-        remote: job.remote,
         seniority: job.seniority,
         experienceYears: job.experienceYears,
         skills: job.skills,
         sponsorsVisa: job.sponsorsVisa,
+        knownToSponsor: job.companySlug ? (sponsorMap.get(job.companySlug) ?? null) : null,
         company: job.company,
         description: job.description,
       };
