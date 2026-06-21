@@ -1,5 +1,47 @@
 # AI Job OS — Session Context
 
+## ⚡ LATEST SESSION (2026-06-21) — READ FIRST
+
+**Context:** Deep diagnostic session. Root cause of "no new jobs on dashboard"
+was a chain of matcher/onboarding bugs, NOT scraping or enrichment.
+
+### Shipped & DEPLOYED (on main)
+
+- **Scraper "Remote US" fix** (PR #25). hasUSLocation() was dropping "Remote US"
+  jobs at every company. Also externalId in dedup hash; lastJobCount=insertedNew.
+  Verified Affirm 2->61. **Pool-wide scrape NOT yet run — only Affirm fresh.**
+- **Scorer redesign** (PR #27). Weights: title 35 (targetRoles vs title) /
+  experience 25 / skills 15 / keywordsInJD 10 (keywords vs title+description) /
+  sponsorship 15 (falls back to Company.knownToSponsor). location & salary removed.
+  Verified 1,343 matches (was 2). **Overrides §4 locked weights — update §4.**
+
+### The remaining root cause — EXPERIENCE (Thread 4)
+
+- totalYearsExperience parses as 5 (counts 2023-25 masters gap as work) -> user
+  reads as SENIOR -> senior roles rank top.
+- **Stopgap applied:** override to 2 via scripts/set-experience.ts (local,
+  uncommitted). Re-scored -> 683 right-fit matches, senior dropped. FRAGILE —
+  reverts to 5 on any resume re-parse.
+- **Proper fix (do fresh):** gap-aware experience in parse-resume.ts. Then
+  re-parse + re-score.
+
+### Pending (filed)
+
+- **Layer 4:** onboarding/preferences still seeds keywords from skills + roles
+  into targetRoles with old labels — INVERTED under new scorer. Fix seeding +
+  form copy so new users aren't broken.
+- Match cron timeout: enrich starves match in daily-enrich.yml (60-min cap).
+- locations still in match-version hash (harmless).
+- Local uncommitted: scripts/peek-score.ts, scripts/set-experience.ts.
+
+### NEXT SESSION task order
+
+1. Experience parser fix (Thread 4) -> re-parse -> re-score.
+2. Layer 4 onboarding reseed + form copy.
+3. Pool-wide scrape. Document weight redesign in §4.
+
+---
+
 > **Paste this file at the start of every new session with Claude.**
 > Last updated: 2026-06-12 — Phase 2K.1 shipped. Production live at https://pasupulasurya-ai-job-os.vercel.app. 101 sponsor-verified companies, daily cron self-sustaining, resume tailoring + ATS-safe PDF live, Chrome apply-extension fills Greenhouse end-to-end (never submits), dashboard shows the full filterable matched set.
 
