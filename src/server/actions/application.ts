@@ -45,3 +45,34 @@ export async function updateApplicationStatusAction(
   logger.info({ userId: appUser.id, applicationId, newStatus }, "application.status_changed");
   return { success: true };
 }
+
+/**
+ * Reverse an apply: the user marked a job applied (or it was auto-marked) but
+ * didn't actually apply. Moves it back to the dashboard. Atomically flips the
+ * UserJobMatch status back to 'viewed' (they had seen it) and deletes the
+ * Application row so it leaves the tracker. Ownership-checked.
+ */
+export async function unapplyApplicationAction(applicationId: string): Promise<ActionResult> {
+  const appUser = await getCurrentAppUser();
+  if (!appUser) return { error: "Not authenticated" };
+
+  const application = await prisma.application.findFirst({
+    where: { id: applicationId, userId: appUser.id },
+    select: { id: true, jobId: true },
+  });
+  if (!application) return { error: "Application not found" };
+
+  await prisma.$transaction([
+    prisma.userJobMatch.updateMany({
+      where: { userId: appUser.id, jobId: application.jobId },
+      data: { status: "viewed" },
+    }),
+    prisma.application.delete({ where: { id: applicationId } }),
+  ]);
+
+  logger.info(
+    { userId: appUser.id, applicationId, jobId: application.jobId },
+    "application.unapplied",
+  );
+  return { success: true };
+}

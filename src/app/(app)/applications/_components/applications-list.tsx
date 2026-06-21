@@ -7,7 +7,10 @@ import {
   APPLICATION_STATUS_LABELS,
   type ApplicationStatus,
 } from "@/shared/data/application-status";
-import { updateApplicationStatusAction } from "@/server/actions/application";
+import {
+  updateApplicationStatusAction,
+  unapplyApplicationAction,
+} from "@/server/actions/application";
 import { spring } from "@/styles/tokens";
 
 type Item = {
@@ -28,6 +31,15 @@ export function ApplicationsList({ items: initial }: { items: Item[] }) {
     setItems((prev) => prev.map((it) => (it.id === id ? { ...it, status: newStatus } : it)));
     startTransition(async () => {
       await updateApplicationStatusAction(id, newStatus);
+    });
+  }
+
+  // Reverse an apply: removes the row here and sends the job back to the
+  // dashboard (the action flips the match to 'viewed' and deletes this Application).
+  function handleUnapply(id: string) {
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    startTransition(async () => {
+      await unapplyApplicationAction(id);
     });
   }
 
@@ -82,6 +94,16 @@ export function ApplicationsList({ items: initial }: { items: Item[] }) {
                       </div>
                     </div>
 
+                    {it.status === "applied" && (
+                      <button
+                        type="button"
+                        onClick={() => handleUnapply(it.id)}
+                        disabled={isPending}
+                        className="text-text-tertiary hover:text-accent shrink-0 rounded-md px-2 py-1 text-xs transition-colors disabled:opacity-50"
+                      >
+                        Not applied
+                      </button>
+                    )}
                     <select
                       value={it.status}
                       disabled={isPending}
