@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { Eye, X, ExternalLink, CheckCircle2, ChevronDown, Wand2 } from "lucide-react";
+import { X, ExternalLink, CheckCircle2, ChevronDown, Wand2 } from "lucide-react";
 import { ScoreRing } from "./score-ring";
 import { ScoreBreakdown } from "./score-breakdown";
 import { spring } from "@/styles/tokens";
@@ -37,10 +37,9 @@ export function MatchCard(props: MatchCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [, startTransition] = useTransition();
 
+  // Marks viewed as a side effect of opening the JD. Title is a real anchor
+  // (LinkTag) so the browser opens the tab natively — no window.open/popup risk.
   const handleView = () => {
-    // Open the real job posting so the user can read the JD and decide.
-    window.open(props.job.sourceUrl, "_blank", "noopener,noreferrer");
-    // Mark viewed as a consequence (idempotent — no-op if already viewed).
     if (localStatus === "viewed" || localStatus === "applied") return;
     setLocalStatus("viewed");
     startTransition(async () => {
@@ -72,6 +71,7 @@ export function MatchCard(props: MatchCardProps) {
     : (props.job.location ?? "");
 
   const ApplyTag = "a";
+  const LinkTag = "a";
 
   // Gate apply on a tailored resume existing. With one: fire the extension
   // (marker on the job URL). Without one: route to the tailor page first —
@@ -95,9 +95,19 @@ export function MatchCard(props: MatchCardProps) {
         >
           <header className="mb-4 flex items-start justify-between gap-6">
             <div className="min-w-0 flex-1">
-              <h2 className="text-[19px] leading-snug font-semibold tracking-tight text-white">
-                {props.job.title}
-              </h2>
+              <LinkTag
+                href={props.job.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleView}
+                className="group/title inline-flex items-start gap-1.5 text-[19px] leading-snug font-semibold tracking-tight text-white transition-colors hover:text-[#0A84FF]"
+              >
+                <h2>{props.job.title}</h2>
+                <ExternalLink
+                  className="mt-1 h-3.5 w-3.5 shrink-0 opacity-0 transition-opacity group-hover/title:opacity-60"
+                  strokeWidth={1.5}
+                />
+              </LinkTag>
               <p className="mt-1.5 text-sm text-white/45">
                 {props.job.company}
                 {locationStr && <span className="text-white/35"> · {locationStr}</span>}
@@ -169,15 +179,6 @@ export function MatchCard(props: MatchCardProps) {
                 className="flex size-9 items-center justify-center rounded-[10px] text-white/35 transition-colors hover:bg-[rgba(255,69,58,0.14)] hover:text-[#FF453A]"
               >
                 <X className="h-4 w-4" strokeWidth={1.5} />
-              </motion.button>
-              <motion.button
-                whileTap={{ scale: 0.92 }}
-                onClick={handleView}
-                aria-label="View job posting"
-                title="Open the job posting"
-                className="flex size-9 items-center justify-center rounded-[10px] text-white/35 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
-              >
-                <Eye className="h-4 w-4" strokeWidth={1.5} />
               </motion.button>
             </div>
           </div>
