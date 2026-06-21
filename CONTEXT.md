@@ -1,6 +1,65 @@
 # AI Job OS — Session Context
 
-## ⚡ LATEST SESSION (2026-06-21) — READ FIRST
+## ⚡ SESSION 2026-06-21 (afternoon) — READ FIRST
+
+Dashboard rework + matcher reconciliation. All shipped & deployed to main.
+
+### Shipped & DEPLOYED
+
+- **Dashboard = actionable matches only** (#28): query shows only status fresh/viewed
+  scoring >=40; applied jobs leave the dashboard (-> Applications), dismissed/rejected
+  excluded, stale sub-40 rows hidden. Windowed pager replaced the render-all-N-pages bug.
+- **Title is the JD link** (#29): job title is an anchor (LinkTag const — dodges the §4F
+  <a-eating pipeline trap) opening sourceUrl + marking viewed. Eye button removed.
+- **Matcher reconciliation** (#30 version-based, then #31 Fix A): force runs DELETE stale
+  fresh/viewed rows. v1 keyed on matchVersion != current FAILED on stable hashes (the
+  experience override changed scoring inputs WITHOUT bumping parseVersion, so old 5y rows
+  shared the current hash). Fix A reconciles by "jobId NOT IN upserted-this-run set" —
+  force-only, empty-set guarded. Verified 690 fossils deleted. Never touches applied/
+  dismissed/rejected.
+- **Un-apply / back-to-dashboard** (#32): unapplyApplicationAction(applicationId) — atomic
+  txn flips UserJobMatch -> viewed + deletes the Application row. "Not applied" button on
+  Applications page, only on applied-status rows. Round-trip verified live.
+
+### Reasons (AI paragraph) — how it works
+
+- Generated for the **top-10 matches per user only** (by design, free-tier quota).
+  scripts/reasons.ts --user=<id> (also --all-users/--limit/--force/--dry-run). Groq
+  llama-3.3-70b, ~5s. NOT a bug that rank-11+ have no paragraph.
+- GOTCHA: any manual --force re-score changes the match set -> top-10 reasons go stale ->
+  MUST re-run reasons.ts after. (Enhancement: auto-trigger at end of force run.)
+
+### EXPERIENCE — still a fragile override (LANDMINE)
+
+- totalYearsExperience=2 via scripts/set-experience.ts (local, uncommitted, edits parsedJson).
+  Holds, but REVERTS to 5 on any resume re-parse — and doesn't bump parseVersion, so
+  reconciliation can't tell eras apart (this broke recon v1). A re-parse silently floods
+  senior jobs back. Proper fix = gap-aware years in parse-resume.ts. HIGH PRIORITY.
+
+### PENDING (Surya's list, my recommended order)
+
+1. **Experience parser fix** (Thread 4) — gap-aware years in parse-resume.ts. Removes the
+   override landmine. Then re-parse + re-score + re-run reasons.
+2. **Reasons reach** — raise top-10 to 25/50, OR on-demand on card view (best for free-tier).
+3. **7-day auto-dismiss sweep** — autoDismissed field exists; VERIFY if a sweep cron is built.
+   If not: auto-dismiss (reversible) fresh-never-viewed matches older than N days.
+4. **Keyword suggestions on cards** — surface suggested keywords/roles per card.
+5. **Tailoring speed** — slow (free-tier LLM). Deep; own session.
+6. **Tailoring harness** — "checks with master, verify with user" — NEEDS CLARIFICATION of
+   current vs desired behavior before scoping.
+7. **PDF single-page + design** — current output disliked; want clean single page. Own session.
+8. **"associate" targeting** — pulls in non-technical biz/ops roles (reason-gen flagged a
+   DoorDash B2B Audience Analyst as non-fit in top-10). Drop or pair with technical keywords.
+
+### §4F workflow rule (ADD to §4F)
+
+- ALWAYS `git checkout main && git pull` BEFORE `git checkout -b newbranch`. Branching off a
+  stale/pre-merge branch repeatedly caused duplicate-commit cleanups (scorer, dashboard,
+  title-link); each fixed via cherry-pick onto fresh main.
+
+---
+
+## ⚡ SESSION 2026-06-21 (morning)
 
 **Context:** Deep diagnostic session. Root cause of "no new jobs on dashboard"
 was a chain of matcher/onboarding bugs, NOT scraping or enrichment.
