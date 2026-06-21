@@ -1,5 +1,32 @@
 # AI Job OS — Session Context
 
+## ⚡ NEXT TASK (queued 2026-06-21) — Preferences form: require targetRoles, not keywords
+
+**Decision: Option A** — require >=1 targetRole (scorer's primary 35pt/title signal), make
+keywords optional (10pt/description). The forms currently do the OPPOSITE of the scorer:
+keywords required (min 3), targetRoles labeled "Optional". Every new user fills keywords,
+skips targetRoles, gets title=0 on everything -> bad matches. Layer 4 / inverted-onboarding
+bug, live in BOTH settings and onboarding.
+
+**Scope — 4 files around a shared schema spine (must stay consistent, do together):**
+
+1. src/shared/schemas/preferences.ts — flip: targetRoles min(1), keywords optional (drop
+   the min(3)). THE SPINE — used by both forms + savePreferencesAction.
+2. src/app/(app)/settings/\_components/preferences-form.tsx — reorder targetRoles first/
+   primary, keywords second/optional; fix canSave (keywords.length>=3 -> targetRoles>=1);
+   fix hint + the misleading "match against job titles and skills" copy.
+3. src/app/onboarding/preferences/page.tsx + \_components/preferences-client-form.tsx — same
+   emphasis fix; ALSO fix inverted seeding (roles seed targetRoles, skills seed keywords) +
+   misleading copy. New-user path — highest priority.
+
+**Why deferred:** 4-file coordinated change around a shared validation spine; changing the
+schema alone makes the other form inconsistent. Wanted a fresh session — a subtle miss =
+broken onboarding for ALL new users (invisible until someone can't onboard).
+
+**Open sub-decision:** min targetRoles 1 vs 2 (lean 1 — one title activates the 35pt scorer).
+
+---
+
 ## ⚡ SESSION 2026-06-21 (afternoon) — READ FIRST
 
 Dashboard rework + matcher reconciliation. All shipped & deployed to main.
