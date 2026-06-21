@@ -83,6 +83,7 @@ export type MatchSummary = {
   upserted: number;
   errors: number;
   skippedAlreadyMatched: number;
+  reconciledDeleted: number;
   durationMs: number;
   version: string;
 };
@@ -186,6 +187,7 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
     upserted: 0,
     errors: 0,
     skippedAlreadyMatched: 0,
+    reconciledDeleted: 0,
   };
 
   // 3. If not forcing, pre-fetch the user's existing match versions to skip re-scoring.
@@ -265,6 +267,24 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
       counters.errors++;
       logger.error({ userId, jobId: job.id, err: (err as Error).message }, "matcher.job.failed");
     }
+  }
+
+  // Reconciliation: on a FULL run (all jobs, not dry/limited), any fresh/viewed
+  // row still at an OLD matchVersion was either not re-scored or dropped below
+  // the persist threshold this run (the loop skips sub-threshold jobs with
+  // `continue`, leaving their stale row untouched). Delete those fossils so the
+  // stored set reflects only currently-qualifying matches. Never touch rows the
+  // user engaged with (applied/dismissed/rejected) — only fresh/viewed.
+  if (!dryRun && !limit) {
+    const deleted = await prisma.userJobMatch.deleteMany({
+      where: {
+        userId,
+        status: { in: ["fresh", "viewed"] },
+        matchVersion: { not: matchVersion },
+      },
+    });
+    counters.reconciledDeleted = deleted.count;
+    logger.info({ userId, deleted: deleted.count, version: matchVersion }, "matcher.reconciled");
   }
 
   const summary: MatchSummary = {
