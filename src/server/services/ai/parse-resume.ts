@@ -9,7 +9,7 @@ import {
   LLMValidationError,
 } from "./llm";
 
-export const RESUME_PARSE_VERSION = "groq-llama-3.3-70b-resume-v3";
+export const RESUME_PARSE_VERSION = "groq-llama-3.3-70b-resume-v4";
 const RESUME_TRUNCATE_CHARS = 12_000;
 const MAX_WORK_HISTORY = 20;
 const MAX_EDUCATION = 10;
@@ -159,6 +159,92 @@ const SKILL_CANONICAL: Record<string, string> = {
   pytroch: "pytorch",
 };
 
+const MONTHS: Record<string, number> = {
+  jan: 0,
+  feb: 1,
+  mar: 2,
+  apr: 3,
+  may: 4,
+  jun: 5,
+  jul: 6,
+  aug: 7,
+  sep: 8,
+  oct: 9,
+  nov: 10,
+  dec: 11,
+};
+
+/**
+ * Parse a workHistory date string into {year, monthIndex}. Handles:
+ *   "April 2026" / "Apr 2026" (month name + year)
+ *   "2026-04" (ISO-ish)
+ *   "2025" (year only -> assume January)
+ *   null with fallbackToNow -> current month (an ongoing role)
+ * Returns null if unparseable.
+ */
+function parseRoleDate(s: string | null, fallbackToNow: boolean): { y: number; m: number } | null {
+  if (s === null || s === undefined || s.trim() === "") {
+    if (fallbackToNow) {
+      const now = new Date();
+      return { y: now.getUTCFullYear(), m: now.getUTCMonth() };
+    }
+    return null;
+  }
+  const str = s.trim().toLowerCase();
+  // "2026-04" or "2026/04"
+  const iso = str.match(/^(\d{4})[-/](\d{1,2})$/);
+  if (iso) return { y: Number(iso[1]), m: Math.min(11, Math.max(0, Number(iso[2]) - 1)) };
+  // "april 2026" / "apr 2026"
+  const mon = str.match(/^([a-z]{3,})\s+(\d{4})$/);
+  if (mon) {
+    const mi = MONTHS[mon[1].slice(0, 3)];
+    if (mi !== undefined) return { y: Number(mon[2]), m: mi };
+  }
+  // "2025" (year only) -> January
+  const yr = str.match(/^(\d{4})$/);
+  if (yr) return { y: Number(yr[1]), m: 0 };
+  return null;
+}
+
+/**
+ * Compute total professional experience in whole years by SUMMING the durations
+ * of each workHistory role (never spanning gaps between jobs — that was the bug:
+ * the LLM spanned first-job-start to now, counting an education gap as work).
+ * Overlapping roles are merged so concurrent jobs don't double-count. Education
+ * is excluded by construction (it's a separate array, never in workHistory).
+ * Returns null if no role has a parseable start date.
+ */
+function computeYearsFromWorkHistory(workHistory: ResumeParse["workHistory"]): number | null {
+  const intervals: Array<{ start: number; end: number }> = [];
+  for (const role of workHistory) {
+    const start = parseRoleDate(role.startDate, false);
+    if (!start) continue;
+    const end = parseRoleDate(role.endDate, true) ?? start;
+    const startM = start.y * 12 + start.m;
+    const endM = end.y * 12 + end.m;
+    if (endM < startM) continue; // malformed range, skip
+    intervals.push({ start: startM, end: endM });
+  }
+  if (intervals.length === 0) return null;
+  // Merge overlaps so concurrent roles aren't double-counted.
+  intervals.sort((a, b) => a.start - b.start);
+  let totalMonths = 0;
+  let curStart = intervals[0].start;
+  let curEnd = intervals[0].end;
+  for (let i = 1; i < intervals.length; i++) {
+    const iv = intervals[i];
+    if (iv.start <= curEnd) {
+      curEnd = Math.max(curEnd, iv.end);
+    } else {
+      totalMonths += curEnd - curStart;
+      curStart = iv.start;
+      curEnd = iv.end;
+    }
+  }
+  totalMonths += curEnd - curStart;
+  return Math.floor(totalMonths / 12);
+}
+
 function sanitize(raw: ResumeParse): ResumeParse {
   const skills = Array.from(
     new Set(
@@ -169,7 +255,12 @@ function sanitize(raw: ResumeParse): ResumeParse {
         .filter((s) => !SKILL_BLOCKLIST.has(s)), // blocklist removal
     ),
   ).slice(0, MAX_SKILLS);
-  return { ...raw, skills };
+  // Override the LLM's totalYearsExperience with a deterministic computation
+  // from workHistory durations (the model tends to span across gaps and
+  // overcount). Falls back to the LLM value only if no role is parseable.
+  const computedYears = computeYearsFromWorkHistory(raw.workHistory);
+  const totalYearsExperience = computedYears ?? raw.totalYearsExperience;
+  return { ...raw, skills, totalYearsExperience };
 }
 
 export async function parseResume(rawText: string): Promise<ResumeParse> {
