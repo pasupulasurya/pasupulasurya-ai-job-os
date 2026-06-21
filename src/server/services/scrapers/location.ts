@@ -168,6 +168,8 @@ const US_REMOTE_INDICATORS = [
   "United States Remote",
   "Remote United States",
   "USA Remote",
+  "Remote US",
+  "Remote USA",
   "Remote (United States)",
   "Remote in US",
   "US-Remote",
