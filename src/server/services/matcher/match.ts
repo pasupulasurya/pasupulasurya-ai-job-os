@@ -203,6 +203,8 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
       );
 
   // 4. Per-job loop.
+  // Track every jobId that gets a row this run, for force-run reconciliation below.
+  const upsertedJobIds = new Set<string>();
   for (const job of jobs) {
     counters.jobsConsidered++;
     try {
@@ -261,6 +263,7 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
             // do NOT reset status: a user who already "viewed" or "applied" keeps that state
           },
         });
+        upsertedJobIds.add(job.id);
         counters.upserted++;
       }
     } catch (err) {
@@ -269,22 +272,27 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
     }
   }
 
-  // Reconciliation: on a FULL run (all jobs, not dry/limited), any fresh/viewed
-  // row still at an OLD matchVersion was either not re-scored or dropped below
-  // the persist threshold this run (the loop skips sub-threshold jobs with
-  // `continue`, leaving their stale row untouched). Delete those fossils so the
-  // stored set reflects only currently-qualifying matches. Never touch rows the
-  // user engaged with (applied/dismissed/rejected) — only fresh/viewed.
-  if (!dryRun && !limit) {
+  // Reconciliation (FORCE runs only): a force run re-scores every job, so any
+  // fresh/viewed row NOT upserted this run is stale — it either dropped below the
+  // persist threshold or its scoring inputs changed (e.g. an experience override
+  // that didn't bump the match-version hash, which is why version-based cleanup is
+  // insufficient). Delete those. Only fresh/viewed are touched; applied/dismissed/
+  // rejected are the user's decisions and are never removed. Guarded on a non-empty
+  // upserted set so a zero-match run can never wipe the table. Non-force runs skip
+  // this entirely: they only add/skip, never re-score-down, so they create no fossils.
+  if (force && !dryRun && !limit && upsertedJobIds.size > 0) {
     const deleted = await prisma.userJobMatch.deleteMany({
       where: {
         userId,
         status: { in: ["fresh", "viewed"] },
-        matchVersion: { not: matchVersion },
+        jobId: { notIn: Array.from(upsertedJobIds) },
       },
     });
     counters.reconciledDeleted = deleted.count;
-    logger.info({ userId, deleted: deleted.count, version: matchVersion }, "matcher.reconciled");
+    logger.info(
+      { userId, deleted: deleted.count, kept: upsertedJobIds.size },
+      "matcher.reconciled",
+    );
   }
 
   const summary: MatchSummary = {
