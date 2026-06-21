@@ -1,33 +1,26 @@
 "use client";
-
 import { motion } from "framer-motion";
 import { spring } from "@/styles/tokens";
-
 type Dimension = {
   score: number;
   signal: string;
   weighted: number;
 };
-
 type ScoreBreakdownData = {
-  titleKeywords?: Dimension;
-  skills?: Dimension;
+  title?: Dimension;
   seniority?: Dimension;
+  skills?: Dimension;
+  keywordsInJD?: Dimension;
   sponsorship?: Dimension;
-  location?: Dimension;
-  salary?: Dimension;
   relevanceGate?: { applied: boolean };
 };
-
 const DIMENSION_META: Array<{ key: keyof ScoreBreakdownData; label: string; maxWeight: number }> = [
-  { key: "titleKeywords", label: "Title keywords", maxWeight: 25 },
-  { key: "skills", label: "Skills overlap", maxWeight: 20 },
-  { key: "seniority", label: "Seniority fit", maxWeight: 15 },
+  { key: "title", label: "Title match", maxWeight: 35 },
+  { key: "seniority", label: "Experience fit", maxWeight: 25 },
+  { key: "skills", label: "Skills overlap", maxWeight: 15 },
+  { key: "keywordsInJD", label: "Keywords in description", maxWeight: 10 },
   { key: "sponsorship", label: "Visa sponsorship", maxWeight: 15 },
-  { key: "location", label: "Location", maxWeight: 15 },
-  { key: "salary", label: "Salary", maxWeight: 10 },
 ];
-
 function isDimension(value: unknown): value is Dimension {
   if (!value || typeof value !== "object") return false;
   const v = value as Record<string, unknown>;
@@ -35,21 +28,19 @@ function isDimension(value: unknown): value is Dimension {
     typeof v.score === "number" && typeof v.signal === "string" && typeof v.weighted === "number"
   );
 }
-
 function getBarColor(score: number): string {
   if (score >= 0.7) return "bg-accent";
   if (score >= 0.3) return "bg-accent/60";
   return "bg-text-tertiary/30";
 }
-
 export function ScoreBreakdown({ data }: { data: unknown }) {
   if (!data || typeof data !== "object") {
     return <p className="text-text-tertiary text-xs">Breakdown not available.</p>;
   }
-
   const breakdown = data as ScoreBreakdownData;
-
-  // Build list of present dimensions, sorted by weighted contribution desc
+  // Build list of present dimensions, sorted by weighted contribution desc.
+  // Filters to whatever keys are present, so matches scored under an older
+  // breakdown shape degrade gracefully (fewer bars) until they re-score.
   const rows = DIMENSION_META.filter((meta) => meta.key !== "relevanceGate")
     .map((meta) => {
       const dim = breakdown[meta.key];
@@ -58,7 +49,6 @@ export function ScoreBreakdown({ data }: { data: unknown }) {
     })
     .filter((r): r is NonNullable<typeof r> => r !== null)
     .sort((a, b) => b.dim.weighted - a.dim.weighted);
-
   return (
     <div className="border-border bg-surface/40 mt-4 space-y-3 rounded-lg border p-4">
       <p className="text-text-tertiary mb-2 text-xs tracking-widest uppercase">
