@@ -38,6 +38,9 @@ export function MatchCard(props: MatchCardProps) {
   const [, startTransition] = useTransition();
 
   const handleView = () => {
+    // Open the real job posting so the user can read the JD and decide.
+    window.open(props.job.sourceUrl, "_blank", "noopener,noreferrer");
+    // Mark viewed as a consequence (idempotent — no-op if already viewed).
     if (localStatus === "viewed" || localStatus === "applied") return;
     setLocalStatus("viewed");
     startTransition(async () => {
@@ -170,9 +173,9 @@ export function MatchCard(props: MatchCardProps) {
               <motion.button
                 whileTap={{ scale: 0.92 }}
                 onClick={handleView}
-                aria-label="Mark as viewed"
-                disabled={localStatus === "viewed" || localStatus === "applied"}
-                className="flex size-9 items-center justify-center rounded-[10px] text-white/35 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white disabled:opacity-30"
+                aria-label="View job posting"
+                title="Open the job posting"
+                className="flex size-9 items-center justify-center rounded-[10px] text-white/35 transition-colors hover:bg-[rgba(255,255,255,0.08)] hover:text-white"
               >
                 <Eye className="h-4 w-4" strokeWidth={1.5} />
               </motion.button>

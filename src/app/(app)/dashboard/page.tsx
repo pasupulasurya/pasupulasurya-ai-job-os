@@ -81,10 +81,17 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       : {}),
   };
 
+  // Dashboard shows only ACTIONABLE matches: fresh (never touched) or viewed
+  // (user opened the JD, still deciding). Excludes applied/dismissed/rejected —
+  // those live in Applications / Dismissed. Default score floor of 40 hides
+  // stale sub-threshold rows left behind by prior re-scores (the matcher
+  // upserts >=40 but never deletes), so the count reflects real matches.
+  const DASHBOARD_MIN_SCORE = 40;
   const matchWhere = {
     userId: appUser.id,
     dismissed: false,
-    ...(sp.minScore !== undefined ? { matchScore: { gte: sp.minScore } } : {}),
+    status: { in: ["fresh", "viewed"] },
+    matchScore: { gte: sp.minScore !== undefined ? sp.minScore : DASHBOARD_MIN_SCORE },
     ...(Object.keys(jobWhere).length > 0 ? { job: jobWhere } : {}),
   };
 
@@ -197,24 +204,67 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
                 ),
               }))}
             />
-            {totalPages > 1 && (
-              <nav className="flex items-center justify-center gap-1 pt-6" aria-label="Pagination">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((n) => (
-                  <Link
-                    key={n}
-                    href={pageHref(n)}
-                    aria-current={n === sp.page ? "page" : undefined}
-                    className={
-                      n === sp.page
-                        ? "min-w-9 rounded-lg bg-[#0A84FF] px-3 py-1.5 text-center text-sm font-medium text-white"
-                        : "min-w-9 rounded-lg border border-white/15 px-3 py-1.5 text-center text-sm text-white/60 transition-colors hover:border-white/30 hover:text-white"
-                    }
+            {totalPages > 1 &&
+              (() => {
+                // Windowed pager: 1 … (cur-1) cur (cur+1) … last, with Prev/Next.
+                const cur = sp.page;
+                const win = new Set<number>([1, totalPages, cur, cur - 1, cur + 1]);
+                const pages = Array.from(win)
+                  .filter((n) => n >= 1 && n <= totalPages)
+                  .sort((a, b) => a - b);
+                const items: (number | "ellipsis")[] = [];
+                let prev = 0;
+                for (const n of pages) {
+                  if (prev && n - prev > 1) items.push("ellipsis");
+                  items.push(n);
+                  prev = n;
+                }
+                const numCls = (active: boolean) =>
+                  active
+                    ? "min-w-9 rounded-lg bg-[#0A84FF] px-3 py-1.5 text-center text-sm font-medium text-white"
+                    : "min-w-9 rounded-lg border border-white/15 px-3 py-1.5 text-center text-sm text-white/60 transition-colors hover:border-white/30 hover:text-white";
+                const navCls =
+                  "min-w-9 rounded-lg border border-white/15 px-3 py-1.5 text-center text-sm text-white/60 transition-colors hover:border-white/30 hover:text-white";
+                const disabledCls =
+                  "min-w-9 rounded-lg border border-white/[0.06] px-3 py-1.5 text-center text-sm text-white/20 cursor-default";
+                return (
+                  <nav
+                    className="flex flex-wrap items-center justify-center gap-1 pt-6"
+                    aria-label="Pagination"
                   >
-                    {n}
-                  </Link>
-                ))}
-              </nav>
-            )}
+                    {cur > 1 ? (
+                      <Link href={pageHref(cur - 1)} className={navCls} aria-label="Previous page">
+                        ‹ Prev
+                      </Link>
+                    ) : (
+                      <span className={disabledCls}>‹ Prev</span>
+                    )}
+                    {items.map((it, i) =>
+                      it === "ellipsis" ? (
+                        <span key={"e" + i} className="px-2 text-sm text-white/30">
+                          …
+                        </span>
+                      ) : (
+                        <Link
+                          key={it}
+                          href={pageHref(it)}
+                          aria-current={it === cur ? "page" : undefined}
+                          className={numCls(it === cur)}
+                        >
+                          {it}
+                        </Link>
+                      ),
+                    )}
+                    {cur < totalPages ? (
+                      <Link href={pageHref(cur + 1)} className={navCls} aria-label="Next page">
+                        Next ›
+                      </Link>
+                    ) : (
+                      <span className={disabledCls}>Next ›</span>
+                    )}
+                  </nav>
+                );
+              })()}
             <div className="pt-8 text-center">
               <Link
                 href="/settings"
