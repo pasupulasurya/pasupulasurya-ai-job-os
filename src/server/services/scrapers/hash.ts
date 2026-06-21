@@ -8,11 +8,17 @@ import { createHash } from "crypto";
  *
  * Pure function. Same inputs always produce same output.
  */
-export function jobHash(companySlug: string, title: string, location: string): string {
+export function jobHash(
+  companySlug: string,
+  title: string,
+  location: string,
+  externalId: string,
+): string {
   const normalized = [
     companySlug.trim().toLowerCase(),
     title.trim().toLowerCase().replace(/\s+/g, " "),
     location.trim().toLowerCase().replace(/\s+/g, " "),
+    externalId.trim().toLowerCase(),
   ].join("|");
 
   return createHash("sha256").update(normalized).digest("hex").slice(0, 32);

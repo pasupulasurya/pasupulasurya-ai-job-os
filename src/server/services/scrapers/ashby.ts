@@ -199,7 +199,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     }
 
     // 5. Dedup hash check
-    const hash = jobHash(company.slug, titleText, locationText);
+    const hash = jobHash(company.slug, titleText, locationText, j.id);
     // Two dedup cases in one indexed query: exact same posting URL
     // (any age — catches >14d jobs alive via matches, which previously
     // fell through to a handled-but-noisy insert constraint error every

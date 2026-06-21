@@ -212,7 +212,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
     }
 
     // 3. Dedup hash check
-    const hash = jobHash(company.slug, titleText, locationText);
+    const hash = jobHash(company.slug, titleText, locationText, String(j.id));
     const sourceUrl = canonicalizeGreenhouseUrl(j.absolute_url);
     // Two dedup cases in one indexed query: exact same posting URL
     // (any age — catches >14d jobs alive via matches, which previously
@@ -266,7 +266,7 @@ async function scrapeOneCompany(companyId: string): Promise<ScrapeOutcome> {
   // Update company stats
   await prisma.company.update({
     where: { id: company.id },
-    data: { lastScrapedAt: now, lastJobCount: outcome.fetched },
+    data: { lastScrapedAt: now, lastJobCount: outcome.insertedNew },
   });
 
   logger.info(outcome, "scrape.greenhouse.company_done");
