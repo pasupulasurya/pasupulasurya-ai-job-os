@@ -27,6 +27,70 @@ broken onboarding for ALL new users (invisible until someone can't onboard).
 
 ---
 
+## ⚡ SESSION 2026-06-24/25 (eve) — resume mgmt + experience completion + 2 diagnoses
+
+All shipped items DEPLOYED to main. Two diagnoses documented for fresh-session fixes.
+
+### Shipped & DEPLOYED
+
+- **Experience parser fix (#33, 16cd78d)** — GLOBAL, deterministic.
+  computeYearsFromWorkHistory() in parse-resume.ts sums workHistory role durations (never
+  spans gaps), parseRoleDate() handles "Month YYYY"/"YYYY"/null->now, merges overlaps,
+  floors. Overrides the LLM number in sanitize(). Bumped v3->v4. ROOT CAUSE of the old "5":
+  the LLM spanned first-job-start->now, counting the 2023-25 masters gap BETWEEN BYJU'S and
+  Viabound. VERIFIED: account re-uploaded via the real settings flow -> years=3 (BYJU'S 22mo
+  - Viabound 15mo + Hike 2mo = 39mo -> 3). Matches re-scored at 3y, reconciliation cleaned
+    old eras, reasons regenerated (10/10). The fragile scripts/set-experience.ts override is
+    now fully superseded.
+- **Resume delete (#34, cdf6bd3)** — deleteResumeAction in resume.ts: atomic txn, REFUSES
+  master ("the boss"), detaches applications (resumeId -> null, history PRESERVED because the
+  FK is nullable), deletes tailoredResumes (required FK, can't detach), deletes the row. No
+  storage cleanup needed (file already removed at upload). UI: trash button on non-master
+  rows + inline "Delete?/Cancel" confirm.
+- **Resume list-sync fix (d5e84cc / 37b4082)** — bug Surya caught: DB had 3 resumes, UI
+  showed 1. Cause: useState(resumes) mirrored the prop and never re-synced on prop change.
+  First fix attempt (useEffect -> setRows) FAILED eslint react-hooks/set-state-in-effect
+  (cascading renders). Correct fix: render DERIVED from prop
+  (visibleRows = resumes.filter(r => !deletedIds.has(r.id))), deletedIds Set only for the
+  optimistic-delete window. LESSON: derive from props, don't mirror props into state.
+
+### DIAGNOSIS A (next matcher task) — over-qualified / wrong jobs scoring >40
+
+NOT a candidate-experience bug (that's fixed — you're correctly 3y/mid). Real top matches
+are GOOD: 66-77, all mid-level ML roles. The "9+ years ML @ 47" job is buried far below the
+top, not competing. ROOT CAUSE: enrichment over-assigns the "mid" band, and the scorer reads
+the coarse seniority BAND, not the JD's literal "9+ years" — so a senior/null-seniority job
+isn't penalized by the experience dimension, and title+sponsorship+keywords carry it over 40.
+MORE VISIBLE problem surfaced in the same data: "associate"/"manager" non-technical roles
+scoring ABOVE real ML jobs (e.g. "Internal Audit IT Associate Manager" @ 72) = the documented
+"associate" targeting issue. FIX OPTIONS: (a) harden enrichment seniority classification;
+(b) extract numeric experienceYears reliably + have the scorer compare numbers, not bands;
+(c) "associate"/title-noise filter. Design-level matcher work — own session, careful (a weight
+change re-ranks ~600 matches).
+
+### DIAGNOSIS B (next tailoring task) — tailoring is slow (turtle, want cheetah)
+
+ROOT CAUSE: 8+ SEQUENTIAL LLM round-trips per tailoring. Verification is a SEPARATE LLM call
+for the summary + every per-role bullet batch + every retry re-verify -> doubles the call
+count. Strict INTEGRITY_RULES -> high drift rate -> many sequential retry+reverify chains.
+Full JD re-sent in every call. (Roles ARE already parallelized via Promise.all — that part is
+fine; the cost is the verify round-trips + retries + the summary chain.)
+CHEETAH PLAN (ranked by impact):
+
+1. Collapse all-bullet rephrase into ONE call across all roles (3 calls -> 1).
+2. Move verification from LLM to CODE (invented-number regex, domain-word substring check
+   vs master bullet) — eliminates ~half the calls.
+3. Fold any remaining verify into the generation call (self-check + cheap code validate).
+4. Trim the JD sent to the model to title + key requirements + skills.
+   Target: ~2 LLM calls per tailoring (down from 8+).
+   CORRECTNESS GUARDRAIL (non-negotiable): preserve the no-fabrication guarantee. Code-verify
+   MUST catch invented metrics + injected domain words, or we ship a faster liar. This is what
+   gets sent to employers — own session, test integrity before trusting speed.
+   Files: src/server/services/ai/tailor.ts (engine), ./verify.ts (verifier being replaced/
+   reduced), src/server/actions/tailor.ts.
+
+---
+
 ## ⚡ SESSION 2026-06-21 (afternoon) — READ FIRST
 
 Dashboard rework + matcher reconciliation. All shipped & deployed to main.
