@@ -387,3 +387,67 @@ export async function setMasterResumeAction(resumeId: string): Promise<SetMaster
 
   return { success: true, newMasterId: result.newMasterId, matchSummary };
 }
+
+type DeleteResumeResult = { error: string } | { success: true };
+
+/**
+ * Delete a non-master resume the user no longer wants.
+ *
+ * Master is protected — the boss. If the target is the master, we refuse and
+ * tell the user to switch master first. Deletion is atomic:
+ *   1. Detach applications made with this resume (Application.resumeId -> null).
+ *      Application history is PRESERVED — the user keeps their "applied to X"
+ *      records; only the resume link is removed (the FK is nullable).
+ *   2. Delete tailored resumes derived from this resume (masterResumeId is a
+ *      required FK, so these can't be detached — they're artifacts of the
+ *      resume being removed and go with it). The underlying UserJobMatch rows
+ *      are NOT affected (cascade runs match->tailored, not the reverse).
+ *   3. Delete the resume row.
+ * No re-match needed: deleting a non-master doesn't change the master, so the
+ * user's match set is unaffected. No storage cleanup needed: the uploaded file
+ * is already removed at upload time (storage is a transit zone).
+ */
+export async function deleteResumeAction(resumeId: string): Promise<DeleteResumeResult> {
+  if (!resumeId || typeof resumeId !== "string") return { error: "Invalid resume id" };
+
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user: authUser },
+  } = await supabase.auth.getUser();
+  if (!authUser) return { error: "Not authenticated" };
+
+  const appUser = await prisma.user.findUnique({ where: { authId: authUser.id } });
+  if (!appUser) {
+    logger.error({ authId: authUser.id }, "resume.delete.user_not_found");
+    return { error: "Couldn't find your account." };
+  }
+
+  const target = await prisma.resumeVersion.findUnique({
+    where: { id: resumeId },
+    select: { id: true, userId: true, isMaster: true },
+  });
+  if (!target || target.userId !== appUser.id) {
+    logger.warn({ userId: appUser.id, resumeId }, "resume.delete.not_owned");
+    return { error: "Resume not found" };
+  }
+  if (target.isMaster) {
+    return { error: "Make another resume your master before deleting this one." };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    // 1. Detach applications — preserve history, drop the resume link.
+    await tx.application.updateMany({
+      where: { userId: appUser.id, resumeId: target.id },
+      data: { resumeId: null },
+    });
+    // 2. Delete tailored resumes derived from this resume (required FK).
+    await tx.tailoredResume.deleteMany({
+      where: { userId: appUser.id, masterResumeId: target.id },
+    });
+    // 3. Delete the resume row.
+    await tx.resumeVersion.delete({ where: { id: target.id } });
+  });
+
+  logger.info({ userId: appUser.id, resumeId: target.id }, "resume.deleted");
+  return { success: true };
+}
