@@ -3,8 +3,8 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { FileText, Loader2 } from "lucide-react";
-import { setMasterResumeAction } from "@/server/actions/resume";
+import { FileText, Loader2, Trash2 } from "lucide-react";
+import { setMasterResumeAction, deleteResumeAction } from "@/server/actions/resume";
 import { ResumeUploadCard } from "./resume-upload-card";
 import { spring } from "@/styles/tokens";
 
@@ -59,7 +59,29 @@ export function ResumeSection({ resumes }: { resumes: ResumeRow[] }) {
     });
   }
 
-  if (resumes.length === 0) {
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [rows, setRows] = useState<ResumeRow[]>(resumes);
+
+  function handleDelete(row: ResumeRow) {
+    setError(null);
+    setToast(null);
+    setDeletingId(row.id);
+    setConfirmingId(null);
+    startTransition(async () => {
+      const res = await deleteResumeAction(row.id);
+      setDeletingId(null);
+      if ("error" in res) {
+        setError(res.error);
+        return;
+      }
+      // Optimistically drop the row, then refresh from the server.
+      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      router.refresh();
+    });
+  }
+
+  if (rows.length === 0) {
     return (
       <div className="space-y-4">
         <ResumeUploadCard />
@@ -106,7 +128,7 @@ export function ResumeSection({ resumes }: { resumes: ResumeRow[] }) {
       </AnimatePresence>
 
       <div className="bg-card border-border divide-border divide-y overflow-hidden rounded-2xl border">
-        {resumes.map((row) => {
+        {rows.map((row) => {
           const isPending = pendingId === row.id;
           return (
             <div key={row.id} className="flex items-center gap-4 p-4">
@@ -133,19 +155,51 @@ export function ResumeSection({ resumes }: { resumes: ResumeRow[] }) {
                   {row.fileSize ? ` · ${formatBytes(row.fileSize)}` : ""}
                 </p>
               </div>
-              <div className="shrink-0">
+              <div className="flex shrink-0 items-center gap-3">
                 {row.isMaster ? (
                   <span className="text-text-tertiary text-xs">Active</span>
+                ) : confirmingId === row.id ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-text-tertiary text-xs">Delete?</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(row)}
+                      disabled={pendingId !== null || deletingId !== null}
+                      className="inline-flex items-center gap-1 text-xs font-medium text-red-400 transition-colors hover:text-red-300 disabled:opacity-40"
+                    >
+                      {deletingId === row.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Delete
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingId(null)}
+                      className="text-text-tertiary hover:text-text-secondary text-xs transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 ) : (
-                  <button
-                    type="button"
-                    onClick={() => handleMakeMaster(row)}
-                    disabled={isPending || pendingId !== null}
-                    className="text-text-secondary hover:text-accent inline-flex items-center gap-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-                    {isPending ? "Switching…" : "Make master"}
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleMakeMaster(row)}
+                      disabled={isPending || pendingId !== null}
+                      className="text-text-secondary hover:text-accent inline-flex items-center gap-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {pendingId === row.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                      {pendingId === row.id ? "Switching…" : "Make master"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingId(row.id)}
+                      disabled={pendingId !== null || deletingId !== null}
+                      aria-label="Delete resume"
+                      title="Delete this resume"
+                      className="text-text-tertiary inline-flex items-center transition-colors hover:text-red-400 disabled:opacity-40"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    </button>
+                  </>
                 )}
               </div>
             </div>
