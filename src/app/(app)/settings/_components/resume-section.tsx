@@ -61,7 +61,12 @@ export function ResumeSection({ resumes }: { resumes: ResumeRow[] }) {
 
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [rows, setRows] = useState<ResumeRow[]>(resumes);
+  // Track optimistically-removed rows. The list is DERIVED from the `resumes`
+  // prop on every render (never mirrored into state), so uploads / make-master
+  // that trigger router.refresh() update it automatically. deletedIds only
+  // covers the brief window between clicking Delete and the refresh landing.
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const visibleRows = resumes.filter((r) => !deletedIds.has(r.id));
 
   function handleDelete(row: ResumeRow) {
     setError(null);
@@ -75,13 +80,18 @@ export function ResumeSection({ resumes }: { resumes: ResumeRow[] }) {
         setError(res.error);
         return;
       }
-      // Optimistically drop the row, then refresh from the server.
-      setRows((prev) => prev.filter((r) => r.id !== row.id));
+      // Optimistically hide the row, then refresh from the server (which will
+      // return the list without it, making the deletedIds entry a no-op).
+      setDeletedIds((prev) => {
+        const next = new Set(prev);
+        next.add(row.id);
+        return next;
+      });
       router.refresh();
     });
   }
 
-  if (rows.length === 0) {
+  if (visibleRows.length === 0) {
     return (
       <div className="space-y-4">
         <ResumeUploadCard />
@@ -128,7 +138,7 @@ export function ResumeSection({ resumes }: { resumes: ResumeRow[] }) {
       </AnimatePresence>
 
       <div className="bg-card border-border divide-border divide-y overflow-hidden rounded-2xl border">
-        {rows.map((row) => {
+        {visibleRows.map((row) => {
           const isPending = pendingId === row.id;
           return (
             <div key={row.id} className="flex items-center gap-4 p-4">
