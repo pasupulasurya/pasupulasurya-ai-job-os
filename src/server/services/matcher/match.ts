@@ -161,7 +161,9 @@ export async function matchJobsForUser(opts: MatchOptions): Promise<MatchSummary
       deletedAt: null,
       enrichmentVersion: { not: null },
       OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      ...(force ? {} : { matches: { none: { userId, matchVersion } } }),
     },
+    omit: { rawJson: true },
     orderBy: { scrapedAt: "desc" },
     ...(limit ? { take: limit } : {}),
   });
