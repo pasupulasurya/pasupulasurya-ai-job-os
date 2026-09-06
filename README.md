@@ -138,8 +138,8 @@ To manually trigger: **Actions → Daily scrape + cleanup → Run workflow**.
 
 This is a small repo built to a serious bar. Read it before contributing:
 
-**Frontend — cinematic, Apple-grade.** OLED black, Inter Display, spring motion, 8px grid, one accent color (`#0A84FF`).
-**Backend — Stripe-grade.** No `any` types. Every external input through Zod. Every async op has structured logging. No `console.log` in production code. Stays correct under partial failure.
+**Frontend — cinematic OLED black, Inter Display, spring motion, 8px grid, one accent color (`#0A84FF`).
+**Backend ** No `any` types. Every external input through Zod. Every async op has structured logging. No `console.log` in production code. Stays correct under partial failure.
 **Tone — calm and direct.** "Done," not "Yay! All done!" No emojis in UI.
 **Never fabricate.** Resume tailoring re-emphasizes truth, never invents it. The system never auto-submits an application.
 **Free tier only.** Paying a penny for inference is the defeat condition.
