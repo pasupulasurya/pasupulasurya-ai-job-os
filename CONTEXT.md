@@ -166,27 +166,6 @@
 
 ---
 
-## 5. AGENT DRIFT PATTERNS (read before planning anything)
-
-This section exists because the agent (Claude) repeatedly drifted in measurable ways, and the user had to catch each one. The patterns are real and named. Read them before proposing any plan, ship, or "honest call."
-
-**The meta-rule:** If you catch yourself making one of these moves, STOP. Re-read the bar in §1. Re-state the recommendation against the bar, not the calendar. Acknowledge the drift.
-
-**Drift #1 — Budget-over-bar framing.** Framing decisions around "fits the time budget" instead of "matches the bar" ("this is a 1h ship," "stop here, good day," "smaller scope is the right call"). Budget is a guardrail, not the criterion. The bar in §1 is the criterion. User tell: "remember the bar not the time."
-
-**Drift #2 — Lazy-first-proposal.** First proposed fix is the cheap one, not the architecturally correct one. "Stripe-grade" means correct, not minimal. Drill before proposing any fix: "Is this Stripe-grade or the cheap version of Stripe-grade?" User tell: "rethink twice — is this the real fix per the bar?"
-
-**Drift #3 — Phantom problem chasing.** Treating normal behavior as a bug; running 3+ diagnostics without an explicit hypothesis. Ask "is this expected?" BEFORE "is this a bug?" Before any diagnostic, write down (a) what should be true, (b) what the data shows, (c) whether (b) is already explained by CONTEXT.
-
-**Drift #4 — Feature queue as quality bar.** Working through a feature queue while the central product loop is broken. The matcher cache bug survived months because nobody ran the system end-to-end as a real user iterating. At session start ask: "When did someone last run the product end-to-end and watch the dashboard update?" If "not this week," that audit is the first task.
-
-**Drift #5 — Stating wall-clock from inference.** Inferring current time/session length and creating false urgency. The agent does NOT have reliable wall-clock access. NEVER state wall-clock or session duration unless the user provided it.
-
-**Drift #6 — Over-asking for file pastes.** Asking for narrow slices across 4-5 turns instead of the whole file once. Before asking for a partial view: "Will I need another part of this file in my next 1-2 turns?" If yes, ask for the whole file now (`cat path | pbcopy ; wc -l path`).
-
-**Drift #7 — Documenting incomplete fixes as "shipped."** "good enough," "minimum viable," "will catch up later," "doesn't block deploy." The bar is Apple-grade/Stripe-grade, not minimum-viable. Before declaring complete, check each item against §1; if even one small item fails, it's partial — document it honestly as partial.
-
-**Drift #8 — No bar pre-check before an action.** Proposing any action without an explicit 4-question check. Every prior drift traces to an action shipped without one. The 4 questions, answered explicitly in the output BEFORE the user has to ask:
 
 1. **Closer to bar?** — toward §1, or just forward?
 2. **Would a senior engineer approve?** — "ship it" or "needs more rigor"?
@@ -194,7 +173,6 @@ This section exists because the agent (Claude) repeatedly drifted in measurable 
 4. **Same answer with unlimited time?** — if "I'd do it differently with more time," you're optimizing for budget (Drift #1).
    If any answer is NO/FAIL/CONVENIENT/DIFFERENT: STOP. Redesign, or explicitly ask the user whether to proceed with the known compromise. User tell: "did you bar pre-check this?"
 
-**How to use this section:** when proposing a plan, a "stop here," a fix for a flagged bug, or a "this is complete/ready" — run it against the 8 patterns first. When the user pushes back ("remember the bar," "is this the real fix," "this is a drop in bar standards") — you've drifted: name the drift number, re-propose against the bar, wait for confirmation. The bar is held by discipline encoded in artifacts (every commit body carries a bar pre-check), not by intuition.
 
 ---
 
@@ -317,47 +295,10 @@ Pipeline: scrape, cleanup, enrich, match, reasons, parse-resume, seed-master-res
 
 ---
 
-## 9. KNOWN ISSUES (live, accepted — one current list)
-
-1. **Null bytes** — ~0.3% of GH jobs; stripped at write, nested JSON occasionally slips. ~2/large-run insert errors at this rate. Accepted.
-2. **Non-technical roles return `skills: []`** — ~60% of jobs. Matcher relevance gate handles correctly.
-3. **Enrichment log `model` cosmetic mismatch** — shows provider default (70b) while API receives the 8b override. Cosmetic.
-4. **Reason text may lag matcher scores after a preference change** — reasons regen via daily cron, not synchronously. Scores are primary; reasons are explanation. Documented behavior.
-5. **`scripts/match-diagnostics.ts` hardcoded to count v2** — use an ad-hoc Prisma groupBy for current version stats.
-6. **GitHub Actions Node 20 deprecation** — June 2026; bump checkout + setup-node.
-7. **Cron cleanup occasionally times out on cold-start connection** — self-heals next run. Free-tier Supabase, accepted.
-8. **Service-role key (`SUPABASE_SERVICE_ROLE_KEY`) invalid** — well-formed but stale `sb_secret_`; admin API returns 401. App flow unaffected (uses anon/cookie). Admin scripts broken until a current key is pulled. Do NOT "fix" by upgrading the SDK (SDK is fine).
-9. **tokensUsed null on TailoredResume** — provider doesn't surface usage; needs an LLMProvider interface change (ripples to Groq). Measured manually via the harness for now.
-10. **5-minute Vercel function window** — fire-and-poll generation; pathologically slow runs could die at the edge → stale-lock recovery. Chunked poll-driven generation is the designed fallback.
-11. **Hydration warning from Grammarly browser extension** — dev-only, cosmetic.
-12. **Gated apply can STRAND users when tailoring can't complete on the free tier (2026-06-13, #23).** The gate assumes tailoring eventually succeeds. On Cerebras free tier (5 req/min, 1M tok/day) a rate-limited or failed tailor leaves status not-ready → button stays "Tailor & Apply" → no path to "Apply." Pre-invite fix: queue gracefully (fire-and-poll, flip on completion), OR fallback-to-master ONLY on genuine `failed` status, OR the planned per-user daily tailor cap. NOT solved.
-13. **Production extension apply-flow UNVERIFIED (2026-06-13).** Gate + full click-to-fill chain verified in localhost only. The local-extension → production-API cookie-auth fetch (credentials:include cross-origin), production PDF bytes, CORS/SameSite — unconfirmed on the live site. APP_ORIGIN already points at production; test possible now that #23 is deployed. Immediate next step.
-
----
-
-## 10. CRITICAL FILES (pointers — repo is the source of truth)
-
-- Schema: `prisma/schema.prisma` · SQL triggers: `prisma/sql/0001_auth_signup_trigger.sql`
-- Design tokens: `src/styles/tokens.ts`, `src/app/globals.css`
-- Matcher: `src/server/services/matcher/{score,filters,match,reason}.ts`
-- Enrichment + providers: `src/server/services/ai/{enrich,groq-provider,cerebras-provider,llm}.ts`
-- Tailoring: `src/server/services/ai/{tailor,verify}.ts` + `src/server/actions/tailor.ts` + `src/app/api/tailored/[matchId]/pdf/route.tsx`
-- Apply engine: `src/apply/*` + `src/server/services/apply/gh-job-questions.ts` + `src/app/api/apply/[matchId]/payload/route.ts`
-- Extension: `extension/{background,content,fill}.ts`
-- Dashboard: `src/app/(app)/dashboard/page.tsx` + `_components/{match-card,match-list,filter-header,empty-state,score-ring,score-breakdown}.tsx`
-- Onboarding rules: `src/server/lib/onboarding.ts`
-- Runbooks: `docs/runbooks/{deploy,cron}.md`
-
----
 
 ## 11. HOW TO RESUME
 
-Start a new session with:
+
 
 > "Read CONTEXT.md first. Confirm schema field names before any code. Free-tier-only is a locked decision — never propose paid APIs."
 
-The agent will: re-read the bar (§1, especially FREE TIER ONLY) → confirm schema (§3) → read the relevant drift patterns (§5) → plan in plain English before code → write in ~30-line chunks → never re-derive from memory → verify (tsc + eslint + build) before every push → "merged"/"verified" only against real output.
-
-If fresh Claude (different account): also paste README.md, ARCHITECTURE.md, COLLABORATION.md. For the full dated build narrative, see AI_JOB_OS_SESSION_JOURNAL.md.
-
-**Claude Projects:** upload README + ARCHITECTURE + CONTEXT + COLLABORATION as project knowledge so new chats auto-include them. Re-upload CONTEXT when it changes.
