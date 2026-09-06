@@ -24,13 +24,13 @@ technical/early-career, all are tired of LinkedIn Easy Apply spam.
 
 ### Frontend — cinematic
 
-Every screen feels like an Apple product. Deep blacks, generous whitespace,
+Every screen feels like Deep blacks, generous whitespace,
 restrained color, premium typography. Motion has purpose; nothing decorative.
 The UI tells the story of the user's job journey.
 
 ### Backend — world-class
 
-Stripe-grade reliability, observability, and type safety. Every action
+reliability, observability, and type safety. Every action
 is logged. Every input is validated. Every operation is idempotent. The
 system stays correct under partial failure and graceful under load.
 
